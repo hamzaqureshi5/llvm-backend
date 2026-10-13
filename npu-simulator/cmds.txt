@@ -1,0 +1,2 @@
+../build/bin/llc -march=npu -stop-after=instruction-select kernels/vadd.ll -o layer1_control_core.s
+../build/bin/llc -march=npu --print-after-all kernels/vadd.ll -o layer1_control_core.s

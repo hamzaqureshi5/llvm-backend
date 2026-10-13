@@ -1,0 +1,20 @@
+#ifndef ELF_RELOC
+#error "ELF_RELOC must be defined"
+#endif
+
+// NPU ELF relocation types.
+//
+// The NPU ISA stores branch targets as ABSOLUTE instruction indices in the
+// 64-bit imm field (bytes 16-23) of each 32-byte instruction word.  A branch
+// at byte address P to a symbol at byte address S encodes:
+//   imm = S / 32   (instruction index, since instructions are 32 bytes)
+//
+// Relocation formulas use the standard RELA addend A and symbol value S:
+//   R_NPU_BRANCH: *(i64 at r_offset) = (S + A) / 32
+//   R_NPU_32:     *(u32 at r_offset) =  S + A
+//   R_NPU_64:     *(u64 at r_offset) =  S + A
+
+ELF_RELOC(R_NPU_NONE,   0)  // No relocation.
+ELF_RELOC(R_NPU_32,     1)  // 32-bit absolute symbol value.
+ELF_RELOC(R_NPU_64,     2)  // 64-bit absolute symbol value.
+ELF_RELOC(R_NPU_BRANCH, 3)  // Branch imm = (S + A) / 32  (instruction index).

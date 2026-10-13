@@ -1,0 +1,1855 @@
+<title>NPU LLVM Backend — Reference Documentation</title>
+<style>
+:root {
+  --ground:   #0B0F1E;
+  --surface:  #131929;
+  --surface2: #1A2035;
+  --border:   #1E2640;
+  --text:     #C8D4EA;
+  --dim:      #6A7F9E;
+  --accent:   #7C6FFF;
+  --teal:     #00D4A8;
+  --yellow:   #F5C842;
+  --orange:   #FF7C3D;
+  --blue:     #3DA8FF;
+  --green:    #4DCC6F;
+  --pink:     #FF4D8A;
+  --purple:   #C77DFF;
+  --gray:     #8FA8C4;
+  --mono: ui-monospace,'Cascadia Code','Fira Code',Menlo,Consolas,monospace;
+  --sans: system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.65;
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+.sidebar {
+  width: 228px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 28px 0 40px;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-logo {
+  padding: 0 20px 24px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.sidebar-logo .title {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  letter-spacing: .04em;
+  display: block;
+  margin-bottom: 4px;
+}
+.sidebar-logo .sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+}
+.nav-group { margin-bottom: 4px; }
+.nav-group-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 8px 20px 4px;
+  display: block;
+}
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+  text-decoration: none;
+  transition: color .15s, background .15s;
+  border-left: 2px solid transparent;
+}
+.nav-link:hover { color: var(--text); background: var(--surface2); }
+.nav-link.active { color: var(--accent); border-left-color: var(--accent); background: var(--surface2); }
+.nav-link .dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.nav-link.l1 .dot { background: var(--teal); }
+.nav-link.l2 .dot { background: var(--orange); }
+.nav-link.l3 .dot { background: var(--purple); }
+
+/* ── Main ────────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: 0 48px 80px;
+  max-width: 860px;
+}
+
+/* ── Hero ────────────────────────────────────────────────── */
+.hero {
+  padding: 72px 0 56px;
+  border-bottom: 1px solid var(--border);
+}
+.hero-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--teal);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+.hero-title {
+  font-family: var(--mono);
+  font-size: clamp(28px, 4vw, 48px);
+  color: #fff;
+  line-height: 1.15;
+  margin-bottom: 12px;
+}
+.hero-title span { color: var(--accent); }
+.hero-desc {
+  font-size: 16px;
+  color: var(--dim);
+  max-width: 540px;
+  margin-bottom: 48px;
+  line-height: 1.7;
+}
+.hero-stats {
+  display: flex;
+  gap: 40px;
+  margin-bottom: 48px;
+  flex-wrap: wrap;
+}
+.hero-stat .n {
+  font-family: var(--mono);
+  font-size: 32px;
+  color: var(--text);
+  display: block;
+  line-height: 1;
+}
+.hero-stat .l {
+  font-size: 12px;
+  color: var(--dim);
+  margin-top: 4px;
+}
+
+/* ── Byte diagram ────────────────────────────────────────── */
+.byte-diagram-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+}
+.byte-diagram-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.byte-diagram-header h3 {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--dim);
+}
+.toggle-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.toggle-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--dim);
+  border: none;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.toggle-btn.active { background: var(--accent); color: #fff; }
+.byte-grid {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 3px;
+  margin-bottom: 12px;
+}
+.byte-box {
+  height: 38px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  transition: transform .1s, opacity .1s;
+  overflow: hidden;
+}
+.byte-box:hover { transform: translateY(-2px); z-index: 2; }
+.byte-box .bi {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: rgba(255,255,255,.35);
+  line-height: 1;
+}
+.byte-box .bl {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  margin-top: 1px;
+  color: rgba(255,255,255,.9);
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: clip;
+}
+.byte-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 12px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  cursor: default;
+}
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.byte-tooltip {
+  position: fixed;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  pointer-events: none;
+  z-index: 100;
+  max-width: 280px;
+  display: none;
+  line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+}
+.byte-tooltip .tt-name { color: var(--accent); font-size: 13px; margin-bottom: 4px; }
+.byte-tooltip .tt-bytes { color: var(--dim); font-size: 10px; margin-bottom: 6px; }
+.byte-tooltip .tt-desc { color: var(--text); }
+
+/* ── Sections ────────────────────────────────────────────── */
+section {
+  padding: 56px 0;
+  border-bottom: 1px solid var(--border);
+}
+section:last-child { border-bottom: none; }
+.section-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin-bottom: 12px;
+}
+h2 {
+  font-family: var(--mono);
+  font-size: 22px;
+  color: #fff;
+  margin-bottom: 8px;
+  line-height: 1.2;
+}
+h3 {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--text);
+  margin-bottom: 12px;
+  margin-top: 32px;
+}
+h3:first-of-type { margin-top: 0; }
+.lead {
+  color: var(--dim);
+  font-size: 15px;
+  max-width: 620px;
+  margin-bottom: 32px;
+  line-height: 1.7;
+}
+p { margin-bottom: 16px; color: var(--dim); max-width: 680px; line-height: 1.7; }
+p strong { color: var(--text); font-weight: 600; }
+
+/* ── Layer cards ─────────────────────────────────────────── */
+.layer-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 8px;
+}
+.layer-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+}
+.layer-card .badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  display: inline-block;
+  margin-bottom: 12px;
+  letter-spacing: .06em;
+}
+.l1 .badge { background: rgba(0,212,168,.12); color: var(--teal); border: 1px solid rgba(0,212,168,.25); }
+.l2 .badge { background: rgba(255,124,61,.12); color: var(--orange); border: 1px solid rgba(255,124,61,.25); }
+.l3 .badge { background: rgba(199,125,255,.12); color: var(--purple); border: 1px solid rgba(199,125,255,.25); }
+.layer-card h3 { font-size: 13px; margin: 0 0 8px; }
+.layer-card p { font-size: 12px; margin: 0 0 12px; max-width: none; }
+.layer-card .reg-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--dim);
+}
+
+/* ── Code blocks ─────────────────────────────────────────── */
+.code-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow-x: auto;
+  margin: 20px 0;
+}
+.code-block pre {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  padding: 20px 24px;
+  color: var(--text);
+  margin: 0;
+}
+.code-block.terminal { border-color: rgba(124,111,255,.3); }
+.code-block.terminal pre { color: var(--teal); }
+.cb-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  border-radius: 5px 5px 0 0;
+}
+.hl-comment { color: var(--dim); }
+.hl-keyword { color: var(--accent); }
+.hl-string  { color: var(--teal); }
+.hl-type    { color: var(--blue); }
+.hl-num     { color: var(--yellow); }
+.hl-fn      { color: var(--green); }
+
+/* ── Pipeline ────────────────────────────────────────────── */
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 24px 0;
+}
+.pipe-step {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+.pipe-node {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 14px 20px;
+  flex: 1;
+  min-width: 0;
+}
+.pipe-node .pn-label {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.pipe-node .pn-file {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+.pipe-node .pn-desc { font-size: 12px; color: var(--dim); margin-top: 4px; }
+.pipe-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 0;
+  color: var(--dim);
+  font-size: 18px;
+  writing-mode: horizontal-tb;
+}
+
+/* ── Tables ──────────────────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 16px 0;
+}
+.data-table th {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(30,38,64,.6);
+  color: var(--dim);
+  vertical-align: top;
+}
+.data-table td:first-child {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: rgba(255,255,255,.02); }
+.data-table .status-ok  { color: var(--teal); font-size: 11px; font-family: var(--mono); }
+.data-table .status-gap { color: var(--dim);  font-size: 11px; font-family: var(--mono); }
+
+/* ── Decision cards ──────────────────────────────────────── */
+.decision-list { display: flex; flex-direction: column; gap: 16px; margin-top: 8px; }
+.decision {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 5px 5px 0;
+  padding: 18px 20px;
+}
+.decision.warn { border-left-color: var(--pink); }
+.decision .d-title {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.decision .d-body { font-size: 13px; color: var(--dim); line-height: 1.6; max-width: none; }
+.decision .d-why {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--dim);
+  opacity: .75;
+  font-style: italic;
+}
+
+/* ── ELF section ─────────────────────────────────────────── */
+.elf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 20px 0;
+}
+.elf-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 16px 20px;
+}
+.elf-card .ec-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.elf-card .ec-val {
+  font-family: var(--mono);
+  font-size: 20px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.elf-card .ec-desc { font-size: 12px; color: var(--dim); }
+
+/* ── Reloc formula ───────────────────────────────────────── */
+.formula {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 16px 20px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text);
+  margin: 16px 0;
+  overflow-x: auto;
+}
+.formula .f-label { font-size: 10px; color: var(--dim); display: block; margin-bottom: 6px; letter-spacing: .08em; text-transform: uppercase; }
+
+/* ── Gap / warning box ───────────────────────────────────── */
+.gap-box {
+  background: rgba(255,77,138,.06);
+  border: 1px solid rgba(255,77,138,.2);
+  border-radius: 5px;
+  padding: 14px 18px;
+  font-size: 13px;
+  color: var(--dim);
+  margin: 8px 0;
+}
+.gap-box .gb-title {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--pink);
+  margin-bottom: 4px;
+}
+
+/* ── ISA Reference Table ─────────────────────────────────── */
+.isa-wrap { overflow-x: auto; margin: 20px 0; border: 1px solid var(--border); border-radius: 6px; }
+.isa-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.isa-table thead th {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  text-align: left;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  background: var(--surface2);
+  font-weight: 500;
+}
+.isa-table .isa-cat td {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  padding: 10px 14px 5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  background: rgba(255,255,255,.015);
+  border-top: 1px solid var(--border);
+}
+.isa-table tbody tr { transition: background .1s; }
+.isa-table tbody tr:not(.isa-cat):hover { background: rgba(255,255,255,.025); }
+.isa-table tbody tr td { padding: 7px 14px; border-bottom: 1px solid rgba(30,38,64,.6); vertical-align: middle; }
+.isa-table tbody tr:last-child td { border-bottom: none; }
+.td-op {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.td-syn {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--gray);
+  white-space: nowrap;
+}
+.td-sem {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.td-note { font-size: 12px; color: var(--dim); }
+.isa-l1 .td-op { color: var(--teal); }
+.isa-l2 .td-op { color: var(--orange); }
+.isa-l3 .td-op { color: var(--purple); }
+
+/* ── Instruction list (legacy chips — kept for book section tags) ── */
+.instr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+  margin: 12px 0;
+}
+.instr-chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.instr-chip .ic-op { color: var(--teal); display: block; }
+.instr-chip .ic-desc { color: var(--dim); font-size: 10px; margin-top: 2px; }
+
+/* ── Stream flow diagram ─────────────────────────────────── */
+.stream-diagram {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0;
+  margin: 24px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.stream-col {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.stream-col:not(:last-child) { border-right: 1px solid var(--border); }
+.stream-col.sc-l1 { background: rgba(0,212,168,.04); }
+.stream-col.sc-l2 { background: rgba(255,124,61,.04); }
+.stream-col.sc-l3 { background: rgba(199,125,255,.04); }
+.sc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.sc-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sc-l1 .sc-dot { background: var(--teal); }
+.sc-l2 .sc-dot { background: var(--orange); }
+.sc-l3 .sc-dot { background: var(--purple); }
+.sc-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.sc-l1 .sc-name { color: var(--teal); }
+.sc-l2 .sc-name { color: var(--orange); }
+.sc-l3 .sc-name { color: var(--purple); }
+.sc-type {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+.sc-instr {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 8px;
+}
+.sc-desc { font-size: 11.5px; color: var(--dim); line-height: 1.5; }
+.sc-arrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* ── Memory model visual ─────────────────────────────────── */
+.mem-diagram {
+  display: flex;
+  gap: 0;
+  margin: 20px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.mem-block {
+  flex: 1;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mem-block:first-child { background: rgba(61,168,255,.04); border-right: 1px solid var(--border); }
+.mem-block:last-child  { background: rgba(0,212,168,.04); }
+.mem-arrow-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  gap: 6px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.mem-arrow-col .ma-op {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--yellow);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  letter-spacing: .08em;
+}
+.mem-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  display: inline-block;
+  margin-bottom: 4px;
+}
+.mem-block:first-child .mem-badge { background: rgba(61,168,255,.15); color: var(--blue); border: 1px solid rgba(61,168,255,.25); }
+.mem-block:last-child  .mem-badge { background: rgba(0,212,168,.12); color: var(--teal); border: 1px solid rgba(0,212,168,.25); }
+.mem-title { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--text); }
+.mem-prop { font-size: 12px; color: var(--dim); }
+.mem-prop strong { color: var(--text); }
+
+/* ── Book chapters ───────────────────────────────────────── */
+#book { padding-top: 8px; }
+.book-chapter {
+  display: flex;
+  gap: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px 18px;
+  margin: 8px 0;
+  transition: border-color 0.15s;
+}
+.book-chapter:hover { border-color: var(--accent); }
+.book-chapter.bc-l2 { border-left: 2px solid var(--orange); }
+.bc-num {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--purple);
+  min-width: 32px;
+  line-height: 1;
+  padding-top: 2px;
+}
+.bc-body { flex: 1; min-width: 0; }
+.bc-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.bc-desc {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.55;
+  margin-bottom: 8px;
+}
+.bc-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: rgba(122,79,204,.12);
+  color: var(--purple);
+  border: 1px solid rgba(122,79,204,.25);
+  border-radius: 3px;
+  padding: 2px 7px;
+}
+.book-chapter.bc-l2 .tag {
+  background: rgba(255,153,0,.1);
+  color: var(--orange);
+  border-color: rgba(255,153,0,.25);
+}
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Focus ───────────────────────────────────────────────── */
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+@media (max-width: 760px) {
+  body { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: static; flex-direction: row; flex-wrap: wrap; padding: 12px 0; }
+  .sidebar-logo { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
+  .main { padding: 0 20px 60px; }
+  .layer-cards { grid-template-columns: 1fr; }
+  .elf-grid { grid-template-columns: 1fr; }
+  .byte-grid { grid-template-columns: repeat(8,1fr); }
+}
+</style>
+
+<!-- Sidebar -->
+<aside class="sidebar" aria-label="Documentation navigation">
+  <div class="sidebar-logo">
+    <span class="title">npu-unknown-unknown</span>
+    <span class="sub">LLVM backend · v0.1</span>
+  </div>
+
+  <nav>
+    <div class="nav-group">
+      <span class="nav-group-label">Overview</span>
+      <a href="#hero"      class="nav-link active"><span class="dot"></span>introduction</a>
+      <a href="#overview"  class="nav-link"><span class="dot"></span>architecture</a>
+      <a href="#encoding"  class="nav-link"><span class="dot"></span>32-byte word</a>
+    </div>
+    <div class="nav-group">
+      <span class="nav-group-label">ISA Layers</span>
+      <a href="#control"   class="nav-link l1"><span class="dot"></span>control-core</a>
+      <a href="#tensor"    class="nav-link l2"><span class="dot"></span>tensor-engine</a>
+      <a href="#vector"    class="nav-link l3"><span class="dot"></span>vector-core</a>
+    </div>
+    <div class="nav-group">
+      <span class="nav-group-label">Backend</span>
+      <a href="#pipeline"  class="nav-link"><span class="dot"></span>llvm-pipeline</a>
+      <a href="#elf"       class="nav-link"><span class="dot"></span>elf-encoding</a>
+      <a href="#decisions" class="nav-link"><span class="dot"></span>design-decisions</a>
+    </div>
+    <div class="nav-group">
+      <span class="nav-group-label">Reference</span>
+      <a href="#files"     class="nav-link"><span class="dot"></span>file-map</a>
+      <a href="#tests"     class="nav-link"><span class="dot"></span>tests</a>
+      <a href="#gaps"      class="nav-link"><span class="dot"></span>known-gaps</a>
+    </div>
+    <div class="nav-group">
+      <span class="nav-group-label">Vector Core ISA Book</span>
+      <a href="#book-intro"    class="nav-link l3"><span class="dot"></span>ch01 · introduction</a>
+      <a href="#book-regs"     class="nav-link l3"><span class="dot"></span>ch02 · register-file</a>
+      <a href="#book-mem"      class="nav-link l3"><span class="dot"></span>ch03 · memory-model</a>
+      <a href="#book-data"     class="nav-link l3"><span class="dot"></span>ch04 · data-movement</a>
+      <a href="#book-scalar"   class="nav-link l3"><span class="dot"></span>ch05 · scalar-helpers</a>
+      <a href="#book-compute"  class="nav-link l3"><span class="dot"></span>ch06 · compute</a>
+      <a href="#book-reduce"   class="nav-link l3"><span class="dot"></span>ch07 · reductions</a>
+      <a href="#book-pred"     class="nav-link l3"><span class="dot"></span>ch08 · predication</a>
+      <a href="#book-exec"     class="nav-link l3"><span class="dot"></span>ch09 · execution-model</a>
+      <a href="#book-examples" class="nav-link l3"><span class="dot"></span>ch10 · worked-examples</a>
+      <a href="#book-encode"   class="nav-link l3"><span class="dot"></span>ch11 · binary-encoding</a>
+      <a href="#book-kdrv"     class="nav-link l2"><span class="dot"></span>ch12 · kernel-driver</a>
+      <a href="#book-rt"       class="nav-link l2"><span class="dot"></span>ch13 · runtime-api</a>
+    </div>
+  </nav>
+</aside>
+
+<!-- Main content -->
+<main class="main">
+
+<!-- ── HERO ───────────────────────────────────────────────── -->
+<section id="hero" class="hero" style="border-bottom:1px solid var(--border)">
+  <div class="hero-eyebrow">LLVM · NPU Backend · Reference Documentation</div>
+  <h1 class="hero-title">npu-<span>unknown</span>-unknown</h1>
+  <p class="hero-desc">
+    A three-layer LLVM backend for a fully-programmable Neural Processing Unit.
+    Every instruction is a 32-byte word — 8× the size of RISC-V — carrying complete operand
+    context: tile dimensions, element counts, and a 64-bit immediate. Compiles LLVM IR to
+    ELF <code>.o</code> files via three coordinated instruction streams.
+  </p>
+  <div class="hero-stats">
+    <div class="hero-stat"><span class="n">32</span><div class="l">bytes per instruction</div></div>
+    <div class="hero-stat"><span class="n">3</span><div class="l">ISA layers / engines</div></div>
+    <div class="hero-stat"><span class="n">315</span><div class="l">EM_NPU machine number</div></div>
+    <div class="hero-stat"><span class="n">8</span><div class="l">lit tests passing</div></div>
+  </div>
+
+  <!-- Byte diagram -->
+  <div class="byte-diagram-wrap">
+    <div class="byte-diagram-header">
+      <h3>Instruction word layout (32 bytes, little-endian)</h3>
+      <div class="toggle-group">
+        <button class="toggle-btn active" id="btn-cinst" onclick="showDiagram('cinst')">cinst</button>
+        <button class="toggle-btn" id="btn-vinst" onclick="showDiagram('vinst')">vinst</button>
+      </div>
+    </div>
+    <div class="byte-grid" id="byte-grid"></div>
+    <div class="byte-legend" id="byte-legend"></div>
+  </div>
+  <div class="byte-tooltip" id="byte-tooltip"></div>
+</section>
+
+<!-- ── ARCHITECTURE OVERVIEW ──────────────────────────────── -->
+<section id="overview">
+  <div class="section-eyebrow">Architecture</div>
+  <h2>Three engines, one machine</h2>
+  <p class="lead">One chip, three fully independent instruction streams running simultaneously. The Control Core sequences the other two — it DMA-stages data into SRAM, fires the Tensor Engine to run the matmul, then launches the Vector Core for per-element post-processing. A complete program is exactly two C arrays: <code>cinst[]</code> for layers 1+2 and <code>vinst[]</code> for layer 3.</p>
+
+  <!-- Stream overview columns -->
+  <div class="stream-diagram">
+    <div class="stream-col sc-l1">
+      <div class="sc-header"><div class="sc-dot"></div><span class="sc-name">Control Core</span></div>
+      <div class="sc-type">Stream type byte = 0 · cinst[]</div>
+      <div class="sc-instr">x0–x31 · scalar registers</div>
+      <div class="sc-desc">Scalar RISC-V–style ISA. Runs first, orchestrates everything. Calls Tensor Engine ops inline in the same <code>cinst[]</code> stream, then calls <code>KLAUNCH</code> to fire the Vector Core over a grid of instances.</div>
+      <div class="sc-arrow">↓ KLAUNCH</div>
+      <div class="sc-instr">KLAUNCH kid, grid_size</div>
+      <div class="sc-instr">KWAIT</div>
+    </div>
+    <div class="stream-col sc-l2">
+      <div class="sc-header"><div class="sc-dot"></div><span class="sc-name">Tensor Engine</span></div>
+      <div class="sc-type">Stream type byte = 0 · cinst[] (same stream)</div>
+      <div class="sc-instr">t0–t7 · tile registers</div>
+      <div class="sc-desc">Dense matmul fast path, embedded in the control stream. <code>CFG.SHAPE M,K,N</code> sets tile size, <code>ACC.CLR</code> zeros the accumulator, <code>MMA dt,a,b</code> accumulates, <code>STORE</code> flushes to DRAM. Shares the cinst[] array with the Control Core.</div>
+      <div class="sc-instr">CFG.SHAPE → ACC.CLR → MMA → STORE</div>
+    </div>
+    <div class="stream-col sc-l3">
+      <div class="sc-header"><div class="sc-dot"></div><span class="sc-name">Vector Core</span></div>
+      <div class="sc-type">Stream type byte = 1 · vinst[] (separate stream)</div>
+      <div class="sc-instr">v0–v31 · float vectors</div>
+      <div class="sc-desc">Programmable per-grid-point kernels. Each instance runs the same <code>vinst[]</code> kernel independently. Entry registers: <code>s0 = instance id</code>, <code>s1 = args base pointer</code>. Ends with <code>KEXIT</code> which unblocks the Control Core's <code>KWAIT</code>.</div>
+      <div class="sc-instr">s0–s31 · engine scalars</div>
+      <div class="sc-instr">m0–m7 · predicate masks</div>
+    </div>
+  </div>
+
+  <h3>Memory model — two address spaces</h3>
+  <div class="mem-diagram">
+    <div class="mem-block">
+      <span class="mem-badge">DRAM</span>
+      <div class="mem-title">0x0000_0000 – 0x7FFF_FFFF</div>
+      <div class="mem-prop">High bit <strong>clear</strong></div>
+      <div class="mem-prop">Latency: <strong>~100 cycles</strong></div>
+      <div class="mem-prop">Capacity: <strong>2 GB</strong></div>
+      <div class="mem-prop">Main model memory. All inter-layer results live here. Kernel arguments are written here by the host before <code>KLAUNCH</code>.</div>
+    </div>
+    <div class="mem-arrow-col">
+      <div class="ma-op">T_DMA_IN →</div>
+      <div class="ma-op">← T_DMA_OUT</div>
+    </div>
+    <div class="mem-block">
+      <span class="mem-badge">SRAM scratchpad</span>
+      <div class="mem-title">0x8000_0000 – 0xFFFF_FFFF</div>
+      <div class="mem-prop">High bit <strong>set</strong> (SCRATCH_BASE)</div>
+      <div class="mem-prop">Latency: <strong>~1 cycle</strong></div>
+      <div class="mem-prop">Capacity: <strong>fixed, small</strong></div>
+      <div class="mem-prop">On-chip scratchpad. Stage weights here before MMA. Overrunning the end of SRAM faults immediately — there is no wrap-around.</div>
+    </div>
+  </div>
+  <p>The canonical pattern is: <strong>DMA_IN</strong> (DRAM → SRAM), <strong>WAIT</strong>, <strong>MMA</strong> over SRAM data, <strong>STORE</strong> result back to DRAM. This hides DRAM latency behind the DMA transfer.</p>
+
+  <h3>Kernel launch — step by step</h3>
+  <p>The control program prepares and fires a vector kernel like this:</p>
+  <div class="code-block"><div class="cb-label">control program: write args → launch → wait</div><pre><span class="hl-comment">; 1. Write kernel arguments to DRAM (host already did this, or do it here)</span>
+<span class="hl-keyword">LI</span>   x10, 0x1000        <span class="hl-comment">; x10 = DRAM address where args live</span>
+<span class="hl-keyword">LI</span>   x11, 64            <span class="hl-comment">; grid size = 64 instances</span>
+
+<span class="hl-comment">; 2. Register kernel index (done once in C via npu_register_kernel(0, vinst_arr, len))</span>
+
+<span class="hl-comment">; 3. Launch: kernel[0] runs 64 times, once per instance</span>
+<span class="hl-keyword">KLAUNCH</span> 0, x11          <span class="hl-comment">; non-blocking — control core moves on immediately</span>
+
+<span class="hl-comment">; 4. Do other work here, or just wait:</span>
+<span class="hl-keyword">KWAIT</span>                    <span class="hl-comment">; stall until all 64 instances hit KEXIT</span>
+<span class="hl-keyword">HALT</span>                     <span class="hl-comment">; end control program</span></pre></div>
+
+  <div class="code-block"><div class="cb-label">vector kernel entry — what the engine scalar registers hold on entry</div><pre><span class="hl-comment">; On entry to every kernel instance:</span>
+<span class="hl-comment">;   s0 = instance id  (0, 1, 2, … grid_size-1)</span>
+<span class="hl-comment">;   s1 = args base pointer in DRAM (the address written to x10 above)</span>
+<span class="hl-comment">;   vl = 0 (must call VSETVL before any vector op)</span>
+
+<span class="hl-keyword">KID</span>   s0               <span class="hl-comment">; refresh s0 = this instance's id</span>
+<span class="hl-keyword">SMULI</span> s2, s0, 256      <span class="hl-comment">; s2 = s0 × 256 (byte offset for this slice)</span>
+<span class="hl-keyword">SADD</span>  s3, s1, s2       <span class="hl-comment">; s3 = args_base + offset = this instance's data ptr</span>
+<span class="hl-keyword">SLI</span>   s4, 256          <span class="hl-comment">; s4 = 256 (element count)</span>
+<span class="hl-keyword">VSETVL</span> s5, s4          <span class="hl-comment">; set vector length; s5 = actual vl granted</span>
+<span class="hl-keyword">VLOAD</span> v0, s3           <span class="hl-comment">; load this instance's slice into v0</span>
+<span class="hl-comment">; … compute …</span>
+<span class="hl-keyword">VSTORE</span> v0, s3          <span class="hl-comment">; write result back</span>
+<span class="hl-keyword">KEXIT</span>                  <span class="hl-comment">; signal done — unblocks KWAIT in control core</span></pre></div>
+</section>
+
+<!-- ── 32-BYTE WORD ────────────────────────────────────────── -->
+<section id="encoding">
+  <div class="section-eyebrow">Instruction Encoding</div>
+  <h2>The 32-byte instruction word</h2>
+  <p class="lead">Both <code>cinst</code> (control/tensor) and <code>vinst</code> (vector) instructions are exactly 32 bytes, zero-padded. Byte 0 is the stream-type discriminator. This fixed width makes the binary format trivially parseable and leaves room for future ISA extensions in the padding bytes [24–31].</p>
+
+  <h3>cinst layout (bytes 0–31)</h3>
+  <div class="code-block"><div class="cb-label">cinst field map</div><pre>
+[0]     stream    u8   stream type (0 = cinst, 1 = vinst)
+[1]     op        u8   cop_t opcode
+[2]     rd        u8   destination GPR (x0–x31)
+[3]     rs1       u8   source GPR 1
+[4]     rs2       u8   source GPR 2
+[5]     dt        u8   destination tile register (0–7)
+[6]     a         u8   source tile A
+[7]     b         u8   source tile B
+[8]     M         u8   tile dimension M (rows)
+[9]     K         u8   tile dimension K (shared)
+[10]    N         u8   tile dimension N (cols)
+[11]    use_base  u8   1 = effective addr is x[rs1] + imm
+[12–15] count    u32   LE element/byte count for load/store/DMA
+[16–23] imm      i64   LE branch target OR f64 scale factor
+[24–31] pad       —    reserved
+</pre></div>
+
+  <h3>vinst layout (bytes 0–31)</h3>
+  <div class="code-block"><div class="cb-label">vinst field map</div><pre>
+[0]     stream    u8   stream type (always 1)
+[1]     vop       u8   vop_t opcode
+[2]     vd        u8   destination vector register (v0–v31)
+[3]     vs1       u8   source vector register 1
+[4]     vs2       u8   source vector register 2
+[5]     vs        u8   source vector register (unary ops)
+[6]     rd        u8   destination engine scalar (s0–s31)
+[7]     rs        u8   source engine scalar / memory base
+[8]     rs1       u8   engine scalar operand 1
+[9]     rs2       u8   engine scalar operand 2
+[10]    md        u8   destination mask register (m0–m7)
+[11]    m1        u8   source mask 1
+[12]    m2        u8   source mask 2
+[13]    use_mask  u8   1 = instruction is predicated
+[14]    mask      u8   predicate mask register index
+[15]    use_base  u8   1 = address is rs + imm
+[16–23] imm      i64   LE branch target, stride, or f64 immediate
+[24]    cmp       u8   cmpkind_t: LT=0 LE=1 EQ=2 NE=3 GT=4 GE=5
+[25]    cvt       u8   cvtmode_t: F32=0 I8=1 I32=2
+[26–31] pad       —    reserved
+</pre></div>
+
+  <h3>Why 32 bytes?</h3>
+  <p>The simulator's <code>npu_encode_cinst()</code> / <code>npu_decode_cinst()</code> in <code>npu_asm.c</code> define this format. The LLVM backend mirrors it exactly in <code>NPUMCCodeEmitter.cpp</code>. The instruction index used for branch targets is therefore <code>byte_address / 32</code> — the ELF relocation stores this divided value, not a raw byte address.</p>
+</section>
+
+<!-- ── CONTROL CORE ────────────────────────────────────────── -->
+<section id="control">
+  <div class="section-eyebrow">Layer 1</div>
+  <h2>Control Core</h2>
+  <p class="lead">A scalar RISC-V–like ISA with 32 general-purpose registers. Also carries the
+  tensor engine instructions in the same <code>cinst</code> stream — both layers share stream
+  type byte = 0.</p>
+
+  <h3>Register file</h3>
+  <table class="data-table">
+    <thead><tr><th>Register</th><th>ABI Role</th><th>Caller-save?</th></tr></thead>
+    <tbody>
+      <tr><td>x0</td><td>Hard zero — writes discarded</td><td>—</td></tr>
+      <tr><td>x1</td><td>Return address (link register)</td><td>Caller-save</td></tr>
+      <tr><td>x2</td><td>Stack pointer</td><td>Callee-save</td></tr>
+      <tr><td>x3–x31</td><td>General purpose (argument passing via x10–x17)</td><td>x10–x17 caller-save</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Instruction set</h3>
+  <div class="isa-wrap">
+  <table class="isa-table">
+  <thead><tr>
+    <th style="width:16%">Mnemonic</th>
+    <th style="width:22%">Syntax</th>
+    <th style="width:30%">Operation</th>
+    <th>Notes</th>
+  </tr></thead>
+  <tbody>
+  <tr class="isa-cat"><td colspan="4">▸ Arithmetic &amp; Logic</td></tr>
+  <tr class="isa-l1"><td class="td-op">ADD</td><td class="td-syn">rd, rs1, rs2</td><td class="td-sem">rd ← rs1 + rs2</td><td class="td-note">64-bit integer</td></tr>
+  <tr class="isa-l1"><td class="td-op">SUB</td><td class="td-syn">rd, rs1, rs2</td><td class="td-sem">rd ← rs1 − rs2</td><td class="td-note"></td></tr>
+  <tr class="isa-l1"><td class="td-op">MUL</td><td class="td-syn">rd, rs1, rs2</td><td class="td-sem">rd ← rs1 × rs2</td><td class="td-note"></td></tr>
+  <tr class="isa-l1"><td class="td-op">ADDI</td><td class="td-syn">rd, rs1, imm</td><td class="td-sem">rd ← rs1 + imm</td><td class="td-note">64-bit immediate; bytes 16–23</td></tr>
+  <tr class="isa-l1"><td class="td-op">AND / OR / XOR</td><td class="td-syn">rd, rs1, rs2</td><td class="td-sem">rd ← rs1 ⊕ rs2</td><td class="td-note">bitwise</td></tr>
+  <tr class="isa-l1"><td class="td-op">SLL / SRL</td><td class="td-syn">rd, rs1, rs2</td><td class="td-sem">rd ← rs1 ≪/≫ rs2</td><td class="td-note">logical shift</td></tr>
+  <tr class="isa-l1"><td class="td-op">SLT</td><td class="td-syn">rd, rs1, rs2</td><td class="td-sem">rd ← (rs1 &lt; rs2) ? 1 : 0</td><td class="td-note">set-less-than</td></tr>
+  <tr class="isa-l1"><td class="td-op">LI</td><td class="td-syn">rd, imm</td><td class="td-sem">rd ← imm</td><td class="td-note">64-bit load-immediate</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Memory</td></tr>
+  <tr class="isa-l1"><td class="td-op">LW / LH / LB</td><td class="td-syn">rd, imm(rs1)</td><td class="td-sem">rd ← mem[rs1 + imm]</td><td class="td-note">use_base byte [11] enables rs1+imm addressing</td></tr>
+  <tr class="isa-l1"><td class="td-op">SW / SH / SB</td><td class="td-syn">rs2, imm(rs1)</td><td class="td-sem">mem[rs1 + imm] ← rs2</td><td class="td-note">use_base byte [11]</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Control Flow</td></tr>
+  <tr class="isa-l1"><td class="td-op">BEQ</td><td class="td-syn">rs1, rs2, label</td><td class="td-sem">if rs1 == rs2: PC ← label</td><td class="td-note">branch-if-equal</td></tr>
+  <tr class="isa-l1"><td class="td-op">BNE</td><td class="td-syn">rs1, rs2, label</td><td class="td-sem">if rs1 ≠ rs2: PC ← label</td><td class="td-note"></td></tr>
+  <tr class="isa-l1"><td class="td-op">BLT</td><td class="td-syn">rs1, rs2, label</td><td class="td-sem">if rs1 &lt; rs2: PC ← label</td><td class="td-note"></td></tr>
+  <tr class="isa-l1"><td class="td-op">BGE</td><td class="td-syn">rs1, rs2, label</td><td class="td-sem">if rs1 ≥ rs2: PC ← label</td><td class="td-note"></td></tr>
+  <tr class="isa-l1"><td class="td-op">JAL</td><td class="td-syn">rd, label</td><td class="td-sem">rd ← PC+1; PC ← label</td><td class="td-note">rd=x1 → call; rd=x0 → unconditional branch</td></tr>
+  <tr class="isa-l1"><td class="td-op">JALR</td><td class="td-syn">rd, rs1, imm</td><td class="td-sem">rd ← PC+1; PC ← rs1+imm</td><td class="td-note">indirect call; JALR x0,x1,0 = return</td></tr>
+  <tr class="isa-l1"><td class="td-op">HALT</td><td class="td-syn">—</td><td class="td-sem">stop control program</td><td class="td-note">must be last instruction; backend emits automatically</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Kernel Dispatch</td></tr>
+  <tr class="isa-l1"><td class="td-op">KLAUNCH</td><td class="td-syn">kid, grid_sz</td><td class="td-sem">launch kernel[kid] over grid</td><td class="td-note">non-blocking — use KWAIT to synchronize</td></tr>
+  <tr class="isa-l1"><td class="td-op">KWAIT</td><td class="td-syn">—</td><td class="td-sem">stall until kernel completes</td><td class="td-note">fence before next KLAUNCH on same data</td></tr>
+  </tbody>
+  </table>
+  </div>
+
+  <h3>Calling convention</h3>
+  <p>Arguments are passed in <code>x10</code>–<code>x17</code>. Return value in <code>x10</code>. The call sequence: <code>ADDI x2, x2, -N</code> (frame setup), <code>SW x1, 0(x2)</code> (spill ra), <code>JAL x1, callee</code>, <code>LW x1, 0(x2)</code> (restore ra), <code>ADDI x2, x2, N</code> (frame teardown), <code>JALR x0, x1, 0</code> (return).</p>
+
+  <p><strong>JAL serves dual duty:</strong> <code>JAL x1, callee</code> is a call (link register = x1). <code>JAL x0, label</code> is an unconditional branch (link discarded to zero register). Both map to the same <code>cop::JAL</code> opcode. The LLVM backend uses <code>NPU::JAL</code> for calls and <code>NPU::BR</code> (a pseudo that also lowers to JAL) for unconditional branches.</p>
+</section>
+
+<!-- ── TENSOR ENGINE ──────────────────────────────────────── -->
+<section id="tensor">
+  <div class="section-eyebrow">Layer 2</div>
+  <h2>Tensor Engine</h2>
+  <p class="lead">Dense matmul fast path. Tile registers <code>t0</code>–<code>t7</code> hold matrix fragments. In LLVM IR they are encoded as <code>i64</code> constants — there is no tile register allocator.</p>
+
+  <h3>Tile operations</h3>
+  <div class="isa-wrap">
+  <table class="isa-table">
+  <thead><tr>
+    <th style="width:16%">Mnemonic</th>
+    <th style="width:20%">Syntax</th>
+    <th style="width:34%">Operation</th>
+    <th>Notes</th>
+  </tr></thead>
+  <tbody>
+  <tr class="isa-cat"><td colspan="4">▸ Configuration</td></tr>
+  <tr class="isa-l2"><td class="td-op">CFG.SHAPE</td><td class="td-syn">M, K, N</td><td class="td-sem">set tile dims M×K×N</td><td class="td-note">must precede LOAD and MMA in every sequence</td></tr>
+  <tr class="isa-l2"><td class="td-op">ACC.CLR</td><td class="td-syn">dt</td><td class="td-sem">tile[dt] ← 0</td><td class="td-note">zero the accumulator tile before any MMA</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Matrix Multiply</td></tr>
+  <tr class="isa-l2"><td class="td-op">MMA</td><td class="td-syn">dt, a, b</td><td class="td-sem">tile[dt] += tile[a] × tile[b]</td><td class="td-note">accumulating; call after ACC.CLR</td></tr>
+  <tr class="isa-l2"><td class="td-op">MATMUL</td><td class="td-syn">dt, a, b</td><td class="td-sem">tile[dt] = tile[a] × tile[b]</td><td class="td-note">resets accumulator implicitly</td></tr>
+  <tr class="isa-l2"><td class="td-op">DOT</td><td class="td-syn">dt, a, b</td><td class="td-sem">tile[dt] = dot(tile[a], tile[b])</td><td class="td-note">dot-product variant</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Tile Load / Store</td></tr>
+  <tr class="isa-l2"><td class="td-op">LOAD</td><td class="td-syn">dt, base, n</td><td class="td-sem">tile[dt] ← DRAM[base … base+n]</td><td class="td-note">n = element count; base from x-register</td></tr>
+  <tr class="isa-l2"><td class="td-op">LOADW</td><td class="td-syn">dt, base, n</td><td class="td-sem">tile[dt] ← SRAM[base … base+n]</td><td class="td-note">weight-path; uses SRAM base address</td></tr>
+  <tr class="isa-l2"><td class="td-op">STORE</td><td class="td-syn">base, dt, n</td><td class="td-sem">DRAM[base … base+n] ← tile[dt]</td><td class="td-note">writes result to DRAM; must follow FENCE</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Element-wise Ops</td></tr>
+  <tr class="isa-l2"><td class="td-op">RELU</td><td class="td-syn">dt, a</td><td class="td-sem">tile[dt][i] ← max(0, tile[a][i])</td><td class="td-note">in-tile activation</td></tr>
+  <tr class="isa-l2"><td class="td-op">SCALE</td><td class="td-syn">dt, a, f</td><td class="td-sem">tile[dt][i] ← tile[a][i] × f</td><td class="td-note">f is f64 in imm field (bytes 16–23)</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ DMA &amp; Synchronization</td></tr>
+  <tr class="isa-l2"><td class="td-op">DMA_IN</td><td class="td-syn">dst, src, n</td><td class="td-sem">SRAM[dst] ← DRAM[src], n bytes</td><td class="td-note">async; issue WAIT before reading SRAM data</td></tr>
+  <tr class="isa-l2"><td class="td-op">DMA_OUT</td><td class="td-syn">dst, src, n</td><td class="td-sem">DRAM[dst] ← SRAM[src], n bytes</td><td class="td-note">async writeback from scratchpad</td></tr>
+  <tr class="isa-l2"><td class="td-op">FENCE</td><td class="td-syn">—</td><td class="td-sem">flush tile engine pipeline</td><td class="td-note">required before CPU read of DRAM result</td></tr>
+  <tr class="isa-l2"><td class="td-op">WAIT</td><td class="td-syn">—</td><td class="td-sem">stall until DMA transfer completes</td><td class="td-note"></td></tr>
+  <tr class="isa-l2"><td class="td-op">BARRIER</td><td class="td-syn">—</td><td class="td-sem">global sync across all engines</td><td class="td-note"></td></tr>
+  </tbody>
+  </table>
+  </div>
+
+  <h3>LLVM intrinsics</h3>
+  <p>Declared in <code>llvm/include/llvm/IR/IntrinsicsNPU.td</code>. All tile-mutating ops are <code>IntrHasSideEffects</code> so LLVM generates <code>INTRINSIC_W_CHAIN</code> nodes (which thread the memory chain), not <code>INTRINSIC_WO_CHAIN</code>. This is required for the <code>LowerIntrinsicCall</code> hook to intercept them.</p>
+
+  <div class="code-block"><div class="cb-label">example: 4×4×4 matmul in LLVM IR</div><pre>
+<span class="hl-keyword">define</span> <span class="hl-type">i64</span> <span class="hl-fn">@matmul</span>(ptr %out, ptr %a, ptr %b) {
+  <span class="hl-comment">; tile register 0 is an i64 constant, not a physical reg</span>
+  %<span class="hl-num">1</span> = call {<span class="hl-type">i64</span>, token} @llvm.npu.cfg.shape(<span class="hl-type">i64</span> <span class="hl-num">4</span>, <span class="hl-type">i64</span> <span class="hl-num">4</span>, <span class="hl-type">i64</span> <span class="hl-num">4</span>)
+  %<span class="hl-num">2</span> = call {<span class="hl-type">i64</span>, token} @llvm.npu.acc.clr(<span class="hl-type">i64</span> <span class="hl-num">0</span>)   <span class="hl-comment">; tile 0</span>
+  %<span class="hl-num">3</span> = call {<span class="hl-type">i64</span>, token} @llvm.npu.load(ptr %a, <span class="hl-type">i64</span> <span class="hl-num">1</span>, <span class="hl-type">i64</span> <span class="hl-num">16</span>)  <span class="hl-comment">; tile 1</span>
+  %<span class="hl-num">4</span> = call {<span class="hl-type">i64</span>, token} @llvm.npu.load(ptr %b, <span class="hl-type">i64</span> <span class="hl-num">2</span>, <span class="hl-type">i64</span> <span class="hl-num">16</span>)  <span class="hl-comment">; tile 2</span>
+  %<span class="hl-num">5</span> = call {<span class="hl-type">i64</span>, token} @llvm.npu.mma(<span class="hl-type">i64</span> <span class="hl-num">0</span>, <span class="hl-type">i64</span> <span class="hl-num">1</span>, <span class="hl-type">i64</span> <span class="hl-num">2</span>)
+  call void @llvm.npu.store(ptr %out, <span class="hl-type">i64</span> <span class="hl-num">0</span>, <span class="hl-type">i64</span> <span class="hl-num">16</span>)
+  ret <span class="hl-type">i64</span> <span class="hl-num">0</span>
+}</pre></div>
+</section>
+
+<!-- ── VECTOR CORE ────────────────────────────────────────── -->
+<section id="vector">
+  <div class="section-eyebrow">Layer 3</div>
+  <h2>Vector Core</h2>
+  <p class="lead">Per-grid-point kernels executing SIMD instructions over variable-length float vectors. The kernel is compiled separately and registered with the runtime before the control program runs.</p>
+
+  <h3>Register files</h3>
+  <table class="data-table">
+    <thead><tr><th>Register file</th><th>Count</th><th>Width</th><th>Use</th></tr></thead>
+    <tbody>
+      <tr><td>v0–v31</td><td>32</td><td>VLEN floats</td><td>Vector operations (VADD, VMUL, VFMA, …)</td></tr>
+      <tr><td>s0–s31</td><td>32</td><td>64-bit</td><td>Engine scalars: loop counters, addresses, reduction results</td></tr>
+      <tr><td>m0–m7</td><td>8</td><td>VLEN bits</td><td>Predicate masks for VSEL/VCMP</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Key instructions</h3>
+  <div class="isa-wrap">
+  <table class="isa-table">
+  <thead><tr>
+    <th style="width:16%">Mnemonic</th>
+    <th style="width:22%">Syntax</th>
+    <th style="width:30%">Operation</th>
+    <th>Notes</th>
+  </tr></thead>
+  <tbody>
+  <tr class="isa-cat"><td colspan="4">▸ Setup</td></tr>
+  <tr class="isa-l3"><td class="td-op">VSETVL</td><td class="td-syn">rd, rs</td><td class="td-sem">vl ← rs; rd ← vl</td><td class="td-note">set active lane count; must precede all vector ops</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Memory</td></tr>
+  <tr class="isa-l3"><td class="td-op">VLOAD</td><td class="td-syn">vd, rs [, stride]</td><td class="td-sem">vd[i] ← DRAM[rs + i×stride]</td><td class="td-note">stride=1 for contiguous</td></tr>
+  <tr class="isa-l3"><td class="td-op">VSTORE</td><td class="td-syn">vs, rs [, stride]</td><td class="td-sem">DRAM[rs + i×stride] ← vs[i]</td><td class="td-note"></td></tr>
+  <tr class="isa-l3"><td class="td-op">VGATHER</td><td class="td-syn">vd, base, vi</td><td class="td-sem">vd[i] ← DRAM[base + vi[i]]</td><td class="td-note">indexed load</td></tr>
+  <tr class="isa-l3"><td class="td-op">VSCATTER</td><td class="td-syn">vs, base, vi</td><td class="td-sem">DRAM[base + vi[i]] ← vs[i]</td><td class="td-note">indexed store</td></tr>
+  <tr class="isa-l3"><td class="td-op">VBCAST</td><td class="td-syn">vd, rs</td><td class="td-sem">vd[i] ← rs (all lanes)</td><td class="td-note">required after VREDSUM to write result back to DRAM</td></tr>
+  <tr class="isa-l3"><td class="td-op">VMOV</td><td class="td-syn">vd, vs</td><td class="td-sem">vd ← vs</td><td class="td-note">register copy</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Arithmetic</td></tr>
+  <tr class="isa-l3"><td class="td-op">VADD / VSUB</td><td class="td-syn">vd, vs1, vs2</td><td class="td-sem">vd[i] ← vs1[i] ± vs2[i]</td><td class="td-note"></td></tr>
+  <tr class="isa-l3"><td class="td-op">VMUL / VDIV</td><td class="td-syn">vd, vs1, vs2</td><td class="td-sem">vd[i] ← vs1[i] × / ÷ vs2[i]</td><td class="td-note"></td></tr>
+  <tr class="isa-l3"><td class="td-op">VFMA</td><td class="td-syn">vd, vs1, vs2</td><td class="td-sem">vd[i] ← vd[i] + vs1[i] × vs2[i]</td><td class="td-note">fused; accumulates into vd — single cycle</td></tr>
+  <tr class="isa-l3"><td class="td-op">VMAX / VMIN</td><td class="td-syn">vd, vs1, vs2</td><td class="td-sem">vd[i] ← max/min(vs1[i], vs2[i])</td><td class="td-note"></td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Transcendentals</td></tr>
+  <tr class="isa-l3"><td class="td-op">VEXP</td><td class="td-syn">vd, vs</td><td class="td-sem">vd[i] ← e ^ vs[i]</td><td class="td-note"></td></tr>
+  <tr class="isa-l3"><td class="td-op">VLOG</td><td class="td-syn">vd, vs</td><td class="td-sem">vd[i] ← ln(vs[i])</td><td class="td-note"></td></tr>
+  <tr class="isa-l3"><td class="td-op">VSQRT / VRSQRT</td><td class="td-syn">vd, vs</td><td class="td-sem">vd[i] ← √vs[i] or 1/√vs[i]</td><td class="td-note"></td></tr>
+  <tr class="isa-l3"><td class="td-op">VRECIP</td><td class="td-syn">vd, vs</td><td class="td-sem">vd[i] ← 1 / vs[i]</td><td class="td-note"></td></tr>
+  <tr class="isa-l3"><td class="td-op">VABS / VNEG</td><td class="td-syn">vd, vs</td><td class="td-sem">vd[i] ← |vs[i]| / −vs[i]</td><td class="td-note"></td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Reductions — result lands in engine scalar, not a vector register</td></tr>
+  <tr class="isa-l3"><td class="td-op">VREDSUM</td><td class="td-syn">rd, vs</td><td class="td-sem">rd ← Σ vs[0..vl−1]</td><td class="td-note">use VBCAST vd, rd then VSTORE to write to DRAM</td></tr>
+  <tr class="isa-l3"><td class="td-op">VREDMAX / VREDMIN</td><td class="td-syn">rd, vs</td><td class="td-sem">rd ← max/min(vs[i])</td><td class="td-note">tree reduction; O(log vl) cycles</td></tr>
+  <tr class="isa-l3"><td class="td-op">VREDAND</td><td class="td-syn">rd, vs</td><td class="td-sem">rd ← &amp;(vs[0..vl−1])</td><td class="td-note">bitwise AND across all lanes</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Predication</td></tr>
+  <tr class="isa-l3"><td class="td-op">VCMP</td><td class="td-syn">md, vs1, vs2</td><td class="td-sem">md[i] ← (vs1[i] ⊚ vs2[i])</td><td class="td-note">cmp field selects LT=0 LE=1 EQ=2 NE=3 GT=4 GE=5</td></tr>
+  <tr class="isa-l3"><td class="td-op">VSEL</td><td class="td-syn">vd, vs1, vs2, m</td><td class="td-sem">vd[i] ← m[i] ? vs1[i] : vs2[i]</td><td class="td-note">mask-controlled select</td></tr>
+  <tr class="isa-l3"><td class="td-op">VCVT</td><td class="td-syn">vd, vs</td><td class="td-sem">vd[i] ← convert(vs[i])</td><td class="td-note">cvt field: F32=0 I8=1 I32=2; rounds &amp; clamps</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Engine Scalar Instructions (operate on s0–s31, not vector registers)</td></tr>
+  <tr class="isa-l3"><td class="td-op">KID</td><td class="td-syn">rd</td><td class="td-sem">rd ← kernel instance id</td><td class="td-note">pre-loaded into s0 on entry; KID refreshes it</td></tr>
+  <tr class="isa-l3"><td class="td-op">SADD / SSUB / SMUL</td><td class="td-syn">rd, rs1, rs2</td><td class="td-sem">rd ← rs1 ± rs2 / × rs2</td><td class="td-note">integer scalar arithmetic</td></tr>
+  <tr class="isa-l3"><td class="td-op">SADDI / SMULI</td><td class="td-syn">rd, rs, imm</td><td class="td-sem">rd ← rs + imm / × imm</td><td class="td-note">immediate variants</td></tr>
+  <tr class="isa-l3"><td class="td-op">SLI / SFI</td><td class="td-syn">rd, imm</td><td class="td-sem">rd ← imm (int / float bits)</td><td class="td-note">load scalar immediate</td></tr>
+  <tr class="isa-l3"><td class="td-op">SLW / SLF</td><td class="td-syn">rd, imm(rs)</td><td class="td-sem">rd ← DRAM[rs + imm]</td><td class="td-note">load int word / float from DRAM</td></tr>
+  <tr class="isa-l3"><td class="td-op">SRECIP</td><td class="td-syn">rd, rs</td><td class="td-sem">rd ← 1.0 / rs</td><td class="td-note">reciprocal; result as float bits in int reg</td></tr>
+  <tr class="isa-cat"><td colspan="4">▸ Vector Control Flow</td></tr>
+  <tr class="isa-l3"><td class="td-op">BR</td><td class="td-syn">label</td><td class="td-sem">PC ← label</td><td class="td-note">unconditional; branch target = word index = byte_addr / 32</td></tr>
+  <tr class="isa-l3"><td class="td-op">BRZ</td><td class="td-syn">rs, label</td><td class="td-sem">if rs == 0: PC ← label</td><td class="td-note"></td></tr>
+  <tr class="isa-l3"><td class="td-op">BRNZ</td><td class="td-syn">rs, label</td><td class="td-sem">if rs ≠ 0: PC ← label</td><td class="td-note"></td></tr>
+  <tr class="isa-l3"><td class="td-op">LOOP</td><td class="td-syn">rs, label</td><td class="td-sem">rs--; if rs ≠ 0: PC ← label</td><td class="td-note">decrement-and-branch; canonical loop counter pattern</td></tr>
+  <tr class="isa-l3"><td class="td-op">KEXIT</td><td class="td-syn">—</td><td class="td-sem">end kernel execution</td><td class="td-note">must be last vinst; unblocks KWAIT in control core</td></tr>
+  </tbody>
+  </table>
+  </div>
+
+  <h3>Writing a result to DRAM</h3>
+  <p><strong>There is no vector-ISA scalar store instruction.</strong> To write a <code>VREDSUM</code> result back to DRAM, you must broadcast it first: <code>VREDSUM s6, v0</code> → <code>VBCAST v1, s6</code> → <code>VSTORE v1, 0(s5)</code>. This is the only path from a reduction scalar to memory.</p>
+</section>
+
+<!-- ── LLVM PIPELINE ──────────────────────────────────────── -->
+<section id="pipeline">
+  <div class="section-eyebrow">Backend Architecture</div>
+  <h2>LLVM compilation pipeline</h2>
+  <p class="lead">LLVM IR enters and 32-byte binary words exit. Six translation layers, each implemented in a distinct file.</p>
+
+  <div class="pipeline">
+    <div class="pipe-step">
+      <div class="pipe-node">
+        <div class="pn-label">LLVM IR  <code style="font-size:11px;color:var(--dim)">@llvm.npu.mma(i64 0, i64 1, i64 2)</code></div>
+        <div class="pn-desc">Source: hand-written or emitted by an MLIR lowering pass (future)</div>
+      </div>
+    </div>
+    <div class="pipe-arrow">↓</div>
+    <div class="pipe-step">
+      <div class="pipe-node">
+        <div class="pn-label">SelectionDAG  <code style="font-size:11px;color:var(--dim)">NPUISD::MMA</code></div>
+        <div class="pn-file">NPUISelLowering.cpp · LowerIntrinsicCall()</div>
+        <div class="pn-desc">Intercepts INTRINSIC_W_CHAIN nodes. Extracts the i64 tile constant with getTileConst(), which recursively follows the SSA use-def chain to find the ConstantSDNode.</div>
+      </div>
+    </div>
+    <div class="pipe-arrow">↓</div>
+    <div class="pipe-step">
+      <div class="pipe-node">
+        <div class="pn-label">MachineInstr  <code style="font-size:11px;color:var(--dim)">NPU::T_MMA</code></div>
+        <div class="pn-file">NPUISelDAGToDAG.cpp · Select()</div>
+        <div class="pn-desc">Pattern-matches NPUISD:: nodes to real NPU machine instructions. Defined in NPUInstrInfo.td, NPUTensorInstrInfo.td, NPUVectorInstrInfo.td.</div>
+      </div>
+    </div>
+    <div class="pipe-arrow">↓</div>
+    <div class="pipe-step">
+      <div class="pipe-node">
+        <div class="pn-label">MCInst</div>
+        <div class="pn-file">NPUMCInstLower.cpp · Lower()</div>
+        <div class="pn-desc">Converts MachineInstr to MCInst. Handles MO_FPImmediate (doubles encoded as raw bit patterns via getDFPImm()). Converts MO_ExternalSymbol / MO_GlobalAddress operands to MCExprs for fixup emission.</div>
+      </div>
+    </div>
+    <div class="pipe-arrow">↓</div>
+    <div class="pipe-step">
+      <div class="pipe-node">
+        <div class="pn-label">32-byte binary word</div>
+        <div class="pn-file">NPUMCCodeEmitter.cpp · encodeInstruction()</div>
+        <div class="pn-desc">Writes a 32-byte zero-initialized array. For branch targets that are symbols, emits MCFixup::create(16, expr, fixup_NPU_branch) — offset 16 because that's the imm field. The fixup anchors r_offset in the ELF record directly at the bytes being patched.</div>
+      </div>
+    </div>
+    <div class="pipe-arrow">↓</div>
+    <div class="pipe-step">
+      <div class="pipe-node">
+        <div class="pn-label">ELF .o file</div>
+        <div class="pn-file">NPUAsmBackend.cpp · applyFixup()&nbsp;&nbsp;NPUELFObjectWriter.cpp · getRelocType()</div>
+        <div class="pn-desc">applyFixup() calls maybeAddReloc() — without this call, no ELF RELA record is ever emitted. For resolved fixups, writes Value/32 (instruction index). For unresolved (external) fixups, writes 0 and lets the ELF writer emit an R_NPU_BRANCH record.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── ELF ────────────────────────────────────────────────── -->
+<section id="elf">
+  <div class="section-eyebrow">Binary Format</div>
+  <h2>ELF encoding &amp; relocations</h2>
+  <p class="lead">NPU produces standard 64-bit ELF with a custom machine number and RELA-format relocations. A future NPU linker applies the branch-target formula; the assembler writes a zero placeholder.</p>
+
+  <div class="elf-grid">
+    <div class="elf-card">
+      <div class="ec-label">Machine number</div>
+      <div class="ec-val">0x13b</div>
+      <div class="ec-desc">EM_NPU = 315 decimal, defined in <code>llvm/include/llvm/BinaryFormat/ELF.h</code> after EM_LOONGARCH = 258</div>
+    </div>
+    <div class="elf-card">
+      <div class="ec-label">Relocation format</div>
+      <div class="ec-val">RELA</div>
+      <div class="ec-desc">HasRelocationAddend = true. Addend is stored in the relocation record, not in the instruction bytes. Required for the ÷32 formula.</div>
+    </div>
+    <div class="elf-card">
+      <div class="ec-label">Fixup anchor offset</div>
+      <div class="ec-val">+16</div>
+      <div class="ec-desc">MCFixup created at byte 16 within the 32-byte word — the start of the 8-byte imm field. r_offset in the RELA entry therefore points directly at the bytes being patched.</div>
+    </div>
+    <div class="elf-card">
+      <div class="ec-label">ELF class</div>
+      <div class="ec-val">ELF64</div>
+      <div class="ec-desc">64-bit addressing. Is64Bit = true in MCELFObjectTargetWriter constructor.</div>
+    </div>
+  </div>
+
+  <h3>Relocation types (NPU.def)</h3>
+  <table class="data-table">
+    <thead><tr><th>Name</th><th>Type</th><th>Width</th><th>Formula</th></tr></thead>
+    <tbody>
+      <tr><td>R_NPU_NONE</td><td>0</td><td>—</td><td>No relocation</td></tr>
+      <tr><td>R_NPU_32</td><td>1</td><td>32 bit</td><td>S + A</td></tr>
+      <tr><td>R_NPU_64</td><td>2</td><td>64 bit</td><td>S + A</td></tr>
+      <tr><td>R_NPU_BRANCH</td><td>3</td><td>64 bit</td><td>(S + A) / 32</td></tr>
+    </tbody>
+  </table>
+
+  <div class="formula">
+    <span class="f-label">R_NPU_BRANCH linker formula</span>
+    *(i64 at r_offset)  =  (S + A) / 32
+    <br>
+    <span style="color:var(--dim);font-size:11px">
+      S = symbol value (final byte address of target instruction)<br>
+      A = addend from RELA record (usually 0)<br>
+      /32 = convert byte address to instruction index (each instruction is 32 bytes)
+    </span>
+  </div>
+
+  <h3>Verification</h3>
+  <div class="code-block terminal"><div class="cb-label">shell</div><pre>llc -mtriple=npu-unknown-unknown -filetype=obj call.ll -o out.o
+llvm-readelf -h out.o   # Machine: 13b
+llvm-readelf -r out.o   # R_NPU_BRANCH at offset 0x50 → callee + 0
+llvm-readelf -S out.o   # .rela.text section present</pre></div>
+
+  <p>Offset <code>0x50</code> = instruction #2 (zero-indexed) × 32 bytes/instr + 16 bytes (imm field offset). In the <code>caller</code> function: ADDI is instruction 0 (0x00), SW is instruction 1 (0x20), JAL is instruction 2 (0x40) — its imm field starts at 0x40 + 16 = <strong>0x50</strong>.</p>
+</section>
+
+<!-- ── DESIGN DECISIONS ───────────────────────────────────── -->
+<section id="decisions">
+  <div class="section-eyebrow">Design Decisions</div>
+  <h2>Key choices &amp; their rationale</h2>
+
+  <div class="decision-list">
+    <div class="decision">
+      <div class="d-title">Tile registers encoded as i64 SSA constants</div>
+      <div class="d-body">Tile registers t0–t7 are not real machine registers in the LLVM sense — they are i64 constant values passed through the SSA chain. The SelectionDAG lowering extracts them with <code>getTileConst()</code>, which recursively follows INTRINSIC_W_CHAIN token operands to find the ConstantSDNode.</div>
+      <div class="d-why">Avoids building a tile register allocator. The NPU tile register file is small (8 entries) and statically scheduled — spilling a tile register doesn't make sense in the model. Constants survive the entire compiler pipeline without allocation.</div>
+    </div>
+
+    <div class="decision">
+      <div class="d-title">IntrHasSideEffects required for tile-mutating operations</div>
+      <div class="d-body">ACC.CLR, MMA, LOAD, STORE — any op that mutates a tile register — must be marked <code>IntrHasSideEffects</code> in IntrinsicsNPU.td. Without this, LLVM creates <code>INTRINSIC_WO_CHAIN</code> nodes, which bypass the <code>setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::i64, Custom)</code> hook and reach the SelectionDAG unhandled.</div>
+      <div class="d-why">The side-effect flag forces a memory/chain dependency edge, preventing the DAG from reordering or eliminating tile ops — necessary because tile state is shared mutable storage invisible to LLVM's alias analysis.</div>
+    </div>
+
+    <div class="decision">
+      <div class="d-title">JAL opcode serves both calls and unconditional branches</div>
+      <div class="d-body">The ISA has one direct-branch opcode: JAL. <code>JAL x1, target</code> is a call (link register x1 holds return address). <code>JAL x0, target</code> is an unconditional branch (link discarded to zero register). LLVM defines <code>NPU::JAL</code> for calls and <code>NPU::BR</code> for branches — both lower to <code>cop::JAL</code> in the binary emitter. The rd field distinguishes them at decode time.</div>
+      <div class="d-why">Mirrors RISC-V's JAL/J encoding scheme. Simpler than adding a dedicated BR opcode: the same fixup infrastructure handles both, and the hardware decoder reads byte [2] (rd) to differentiate.</div>
+    </div>
+
+    <div class="decision warn">
+      <div class="d-title">applyFixup must call maybeAddReloc — the missing link</div>
+      <div class="d-body"><code>MCAssembler::evaluateFixup()</code> calls <code>backend.applyFixup(F, Fixup, Target, Data, Value, IsResolved)</code>. For external symbols, <code>IsResolved=false</code>. The backend's <code>applyFixup</code> <em>must</em> call <code>maybeAddReloc(F, Fixup, Target, Value, IsResolved)</code> internally — without this, <code>MCObjectWriter::recordRelocation()</code> is never invoked and no ELF RELA entry is emitted. The object file appears to compile successfully but the relocation table is empty. The <code>callee</code> symbol shows as UND with value 0, and the JAL imm field is silently zeroed.</div>
+      <div class="d-why">This is a non-obvious invariant. The call chain is: evaluateFixup → applyFixup → maybeAddReloc → recordRelocation → ELF RELA entry. Skipping maybeAddReloc produces no error, no warning — just a broken object file.</div>
+    </div>
+
+    <div class="decision">
+      <div class="d-title">MCFixup created at offset 16 (the imm field), not offset 0</div>
+      <div class="d-body"><code>MCFixup::create(16, expr, fixup_NPU_branch)</code> — the first argument is the byte offset of the fixup within the instruction word. By anchoring at 16 (the start of the 8-byte imm field), the ELF writer sets <code>r_offset = instruction_start + 16</code>, pointing directly at the bytes that the linker will patch. <code>applyFixup</code> receives <code>Data</code> already pointing at the imm field, so it writes 8 bytes at offset 0 within Data.</div>
+      <div class="d-why">If offset 0 were used, r_offset would point at the stream-type byte, not the imm field. The linker would overwrite opcode/rd/rs1 bytes instead of the immediate — corrupting the instruction.</div>
+    </div>
+
+    <div class="decision">
+      <div class="d-title">EM_NPU = 315, defined after EM_LOONGARCH</div>
+      <div class="d-body">The ELF machine number 315 (0x13b) was chosen to avoid collisions with all known standard ELF targets. It is added after EM_LOONGARCH = 258 in <code>llvm/include/llvm/BinaryFormat/ELF.h</code>. The enum block for NPU relocations is also in ELF.h, pulling definitions from <code>llvm/include/llvm/BinaryFormat/ELFRelocs/NPU.def</code> via the standard <code>ELF_RELOC</code> macro pattern.</div>
+      <div class="d-why">Custom non-standard value for an experimental target. Not registered with the official ELF spec — this is a research/prototyping backend. A production target would apply for a number from the ABI committee.</div>
+    </div>
+
+    <div class="decision">
+      <div class="d-title">Vector ISA uses separate engine scalars (s0–s31), not GPRs (x0–x31)</div>
+      <div class="d-body">The vector core has its own scalar register file (engine scalars s0–s31) entirely separate from the control core's GPRs (x0–x31). Engine scalars serve as loop counters, vector-length holders, reduction targets, and memory base addresses within vector kernels. The LLVM vector register info defines these as a separate register class <code>EngineScalar</code> with its own allocation order.</div>
+      <div class="d-why">The vector and control cores execute asynchronously — GPRs are not visible to the vector engine. Using a separate register file matches the hardware architecture and avoids cross-domain register conflicts at the ISA level.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FILE MAP ───────────────────────────────────────────── -->
+<section id="files">
+  <div class="section-eyebrow">Reference</div>
+  <h2>File map</h2>
+
+  <h3>TableGen (target description)</h3>
+  <table class="data-table">
+    <thead><tr><th>File</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td>NPU.td</td><td>Top-level target definition, feature flags, subtarget</td></tr>
+      <tr><td>NPUInstrInfo.td</td><td>Control core scalar ISA — ADD, LW, BEQ, JAL, KLAUNCH, …</td></tr>
+      <tr><td>NPUTensorInstrInfo.td</td><td>Layer 2 tensor engine — CFG.SHAPE, MMA, LOAD, STORE, …</td></tr>
+      <tr><td>NPUVectorInstrInfo.td</td><td>Layer 3 vector core — VADD, VREDSUM, VBCAST, BRZ, KEXIT, …</td></tr>
+      <tr><td>NPURegisterInfo.td</td><td>GPR register class (x0–x31)</td></tr>
+      <tr><td>NPUVectorRegisterInfo.td</td><td>VRF (v0–v31), EngineScalar (s0–s31), Mask (m0–m7)</td></tr>
+      <tr><td>NPUCallingConv.td</td><td>Calling convention: args in x10–x17, return in x10</td></tr>
+      <tr><td>NPUSchedule.td</td><td>Scheduling model (placeholder, not cycle-accurate)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>C++ backend files</h3>
+  <table class="data-table">
+    <thead><tr><th>File</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td>NPUTargetMachine.cpp</td><td>Registers the target, creates the pass pipeline</td></tr>
+      <tr><td>NPUISelLowering.cpp</td><td>Lowers <code>@llvm.npu.*</code> intrinsics → NPUISD:: DAG nodes</td></tr>
+      <tr><td>NPUISelDAGToDAG.cpp</td><td>Pattern-matches DAG nodes → NPU MachineInstrs</td></tr>
+      <tr><td>NPUInstrInfo.cpp</td><td>InstrInfo stub (insertBranch not yet implemented)</td></tr>
+      <tr><td>NPURegisterInfo.cpp</td><td>Reserved registers, frame pointer elimination</td></tr>
+      <tr><td>NPUFrameLowering.cpp</td><td>Prologue/epilogue: ADDI sp adjust + SW/LW ra</td></tr>
+      <tr><td>NPUMCInstLower.cpp</td><td>MachineInstr → MCInst, handles DFPImm + symbol exprs</td></tr>
+      <tr><td>NPUAsmPrinter.cpp</td><td>Drives the MC emission pass</td></tr>
+      <tr><td>NPUSubtarget.cpp</td><td>CPU feature initialization</td></tr>
+    </tbody>
+  </table>
+
+  <h3>MC layer (MCTargetDesc/)</h3>
+  <table class="data-table">
+    <thead><tr><th>File</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td>NPUMCCodeEmitter.cpp</td><td>MCInst → 32-byte binary word; emits MCFixups for branch symbols</td></tr>
+      <tr><td>NPUAsmBackend.cpp</td><td>Fixup application; calls maybeAddReloc for external symbols</td></tr>
+      <tr><td>NPUELFObjectWriter.cpp</td><td>Maps fixup kinds to ELF relocation types; sets EM_NPU</td></tr>
+      <tr><td>NPUFixups.h</td><td>Defines <code>fixup_NPU_branch</code> enum</td></tr>
+      <tr><td>NPUInstPrinter.cpp</td><td>Prints MCInst operands (tile regs, DFPImm, engine scalars)</td></tr>
+      <tr><td>NPUMCAsmInfo.cpp</td><td>Comment character, data directives, ELF target</td></tr>
+      <tr><td>NPUMCTargetDesc.cpp</td><td>Factory functions wiring all MC components together</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Global headers</h3>
+  <table class="data-table">
+    <thead><tr><th>File</th><th>What was added</th></tr></thead>
+    <tbody>
+      <tr><td>llvm/include/llvm/IR/IntrinsicsNPU.td</td><td>All <code>@llvm.npu.*</code> intrinsic declarations</td></tr>
+      <tr><td>llvm/include/llvm/BinaryFormat/ELF.h</td><td><code>EM_NPU = 315</code>; NPU relocation enum via NPU.def</td></tr>
+      <tr><td>llvm/include/llvm/BinaryFormat/ELFRelocs/NPU.def</td><td>R_NPU_NONE, R_NPU_32, R_NPU_64, R_NPU_BRANCH definitions</td></tr>
+      <tr><td>llvm/lib/TargetParser/Triple.cpp</td><td>Recognizes <code>npu</code> as ArchType::npu</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ── TESTS ──────────────────────────────────────────────── -->
+<section id="tests">
+  <div class="section-eyebrow">Testing</div>
+  <h2>Build &amp; test</h2>
+
+  <h3>Build LLVM with NPU target</h3>
+  <div class="code-block terminal"><div class="cb-label">shell</div><pre>cmake -G Ninja -S llvm -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_TARGETS_TO_BUILD="X86;NPU" \
+  -DLLVM_ENABLE_ASSERTIONS=ON
+cmake --build build --target llc llvm-readelf llvm-lit</pre></div>
+
+  <h3>Run NPU tests</h3>
+  <div class="code-block terminal"><div class="cb-label">shell</div><pre>build/bin/llvm-lit -v llvm/test/CodeGen/NPU/
+# 8/8 tests passing</pre></div>
+
+  <h3>Test inventory</h3>
+  <table class="data-table">
+    <thead><tr><th>Test file</th><th>Verifies</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>add.ll</td><td>ADD, ADDI, basic arithmetic</td><td><span class="status-ok">PASS</span></td></tr>
+      <tr><td>arith.ll</td><td>SUB, MUL, AND, OR, XOR, SLL, SRL</td><td><span class="status-ok">PASS</span></td></tr>
+      <tr><td>call.ll</td><td>JAL call sequence, frame setup/teardown</td><td><span class="status-ok">PASS</span></td></tr>
+      <tr><td>ret-imm.ll</td><td>LI, JALR return, constant materialization</td><td><span class="status-ok">PASS</span></td></tr>
+      <tr><td>icmp-br.ll</td><td>BEQ, BNE, BLT, BGE, conditional branches</td><td><span class="status-ok">PASS</span></td></tr>
+      <tr><td>tensor-engine.ll</td><td>CFG.SHAPE, ACC.CLR, MMA, LOAD, STORE</td><td><span class="status-ok">PASS</span></td></tr>
+      <tr><td>vector-core.ll</td><td>VADD, VREDSUM, VBCAST, VSTORE</td><td><span class="status-ok">PASS</span></td></tr>
+      <tr><td>elf-relocs.ll</td><td>EM_NPU=0x13b header, R_NPU_BRANCH RELA entry, .rela.text section</td><td><span class="status-ok">PASS</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Manual ELF inspection</h3>
+  <div class="code-block terminal"><div class="cb-label">shell</div><pre>llc -mtriple=npu-unknown-unknown -filetype=asm add.ll -o -
+llc -mtriple=npu-unknown-unknown -filetype=obj call.ll -o out.o
+llvm-readelf -h out.o   # ELF64, Machine: 13b
+llvm-readelf -r out.o   # R_NPU_BRANCH at 0x50 → callee + 0
+llvm-readelf --hex-dump=.text out.o</pre></div>
+</section>
+
+<!-- ── KNOWN GAPS ─────────────────────────────────────────── -->
+<section id="gaps">
+  <div class="section-eyebrow">Status</div>
+  <h2>Known gaps</h2>
+  <p class="lead">The backend is functional for single-basic-block functions and produces correct ELF object files. The following areas are not yet implemented.</p>
+
+  <div class="gap-box">
+    <div class="gb-title">insertBranch not implemented in NPUInstrInfo</div>
+    Multi-basic-block functions that trigger the BranchFolding pass (which calls <code>TargetInstrInfo::insertBranch()</code> to tail-merge blocks) crash with: <em>Target didn't implement TargetInstrInfo::insertBranch!</em> The ELF relocation test works around this by using a single-block function.
+  </div>
+
+  <div class="gap-box">
+    <div class="gb-title">T_CONV and T_POOL are stubs</div>
+    Convolution and pooling are marked as stubs in the simulator (<code>npu.c</code>). The LLVM backend defines their opcodes in the encoding table but there are no corresponding <code>@llvm.npu.conv</code> / <code>@llvm.npu.pool</code> intrinsics or lowering paths. These should be built from vector-core primitives.
+  </div>
+
+  <div class="gap-box">
+    <div class="gb-title">No MLIR dialect or IREE integration</div>
+    <code>llvm_lowering.md</code> sketches a design for lowering from MLIR to NPU: control core → scalar IR + RISC-V-style backend; tensor engine → target intrinsics over an opaque <code>target("npu.tile")</code> type (cf. x86 AMX); vector core → native LLVM vector IR + intrinsics. None of this exists yet — the LLVM backend is reachable only via direct <code>@llvm.npu.*</code> intrinsics.
+  </div>
+
+  <div class="gap-box">
+    <div class="gb-title">T_QUANT / T_DEQUANT intrinsics missing</div>
+    The simulator defines quantization opcodes (cop_t values 43, 44). The LLVM backend encoding table includes them, but no <code>@llvm.npu.quant</code> / <code>@llvm.npu.dequant</code> intrinsics are declared and no lowering patterns exist. Integer/quantized lanes are currently modeled in the simulator as float (VCVT rounds/clamps) — fine for functional checks, not bit-exact int8.
+  </div>
+
+  <div class="gap-box">
+    <div class="gb-title">No ELF symbol versioning or section grouping</div>
+    The ELF writer produces minimal output: <code>.text</code>, <code>.note.GNU-stack</code>, <code>.symtab</code>, <code>.strtab</code>, and <code>.rela.text</code> (when relocations exist). No <code>.eh_frame</code>, no COMDAT groups, no debug info (<code>.debug_info</code> / DWARF). A production linker would require at minimum <code>.eh_frame</code> for stack unwinding.
+  </div>
+</section>
+
+<!-- ── VECTOR CORE ISA BOOK ───────────────────────────────── -->
+<section id="book">
+  <div class="section-eyebrow">Documentation</div>
+  <h2>Vector Core ISA — Reference Book</h2>
+  <p class="lead">A 13-chapter textbook covering the NPU Vector Core instruction set from first
+  principles through the driver and runtime stack. Each chapter builds on the previous one with
+  full worked examples, ASCII diagrams, and implementation traces.</p>
+
+  <!-- Ch01 -->
+  <div id="book-intro" class="book-chapter">
+    <div class="bc-num">01</div>
+    <div class="bc-body">
+      <div class="bc-title">Introduction</div>
+      <div class="bc-desc">Three-layer NPU architecture overview — why three separate engines exist and how they cooperate. Includes a complete "Hello World" vector-add kernel with register trace and control-core launch sequence.</div>
+      <div class="bc-tags">
+        <span class="tag">3-layer design</span>
+        <span class="tag">SIMT model</span>
+        <span class="tag">vadd kernel</span>
+        <span class="tag">KLAUNCH</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch02 -->
+  <div id="book-regs" class="book-chapter">
+    <div class="bc-num">02</div>
+    <div class="bc-body">
+      <div class="bc-title">The Register File</div>
+      <div class="bc-desc">Deep dive into all four register files: v0–v31 (256 float lanes each), s0–s31 engine scalars (int/float union), m0–m7 mask registers, and the vl length register. Covers kernel-entry wiring, zeroing guarantees, and per-instruction register selection.</div>
+      <div class="bc-tags">
+        <span class="tag">v0–v31</span>
+        <span class="tag">s0–s31</span>
+        <span class="tag">m0–m7</span>
+        <span class="tag">vl register</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch03 -->
+  <div id="book-mem" class="book-chapter">
+    <div class="bc-num">03</div>
+    <div class="bc-body">
+      <div class="bc-title">Memory Model</div>
+      <div class="bc-desc">Two-address-space design: DRAM (high bit clear, 100-cycle latency) and SRAM scratchpad (SCRATCH_BASE | offset, 1-cycle latency). Covers the DMA staging pattern, address arithmetic, and the 5-step SRAM workflow for high-throughput kernels.</div>
+      <div class="bc-tags">
+        <span class="tag">DRAM vs SRAM</span>
+        <span class="tag">SCRATCH_BASE</span>
+        <span class="tag">T_DMA_IN/OUT</span>
+        <span class="tag">latency model</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch04 -->
+  <div id="book-data" class="book-chapter">
+    <div class="bc-num">04</div>
+    <div class="bc-body">
+      <div class="bc-title">Data Movement</div>
+      <div class="bc-desc">All 7 Section 9 instructions in depth: VLOAD, VSTORE, VGATHER, VSCATTER, VMOV, VBCAST, and VSETVL. Every addressing mode with ASCII lane diagrams showing exactly which memory words map to which vector lanes at each stride.</div>
+      <div class="bc-tags">
+        <span class="tag">VLOAD / VSTORE</span>
+        <span class="tag">VGATHER / VSCATTER</span>
+        <span class="tag">VBCAST</span>
+        <span class="tag">use_base</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch05 -->
+  <div id="book-scalar" class="book-chapter">
+    <div class="bc-num">05</div>
+    <div class="bc-body">
+      <div class="bc-title">Engine Scalar Helpers</div>
+      <div class="bc-desc">The 11 engine-scalar instructions that form the backbone of SIMT addressing: SLI, SFI, SADD, SADDI, SSUB, SMUL, SMULI, SLW, SLF, SRECIP, and KID. Includes the complete canonical SIMT slice-address pattern: KID + SMULI + SADD.</div>
+      <div class="bc-tags">
+        <span class="tag">KID</span>
+        <span class="tag">SMULI</span>
+        <span class="tag">SADD</span>
+        <span class="tag">SIMT addressing</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch06 -->
+  <div id="book-compute" class="book-chapter">
+    <div class="bc-num">06</div>
+    <div class="bc-body">
+      <div class="bc-title">Compute Primitives</div>
+      <div class="bc-desc">Full arithmetic instruction set: VADD, VSUB, VMUL, VDIV, VMAX, VMIN, VFMA. Transcendentals: VEXP, VLOG, VSQRT, VRSQRT, VRECIP, VABS, VNEG. Comparison and selection: VCMP, VSEL, VCVT. Complete Sigmoid, GELU, and LayerNorm kernel examples.</div>
+      <div class="bc-tags">
+        <span class="tag">VFMA</span>
+        <span class="tag">VEXP / VLOG</span>
+        <span class="tag">VCMP / VSEL</span>
+        <span class="tag">VCVT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch07 -->
+  <div id="book-reduce" class="book-chapter">
+    <div class="bc-num">07</div>
+    <div class="bc-body">
+      <div class="bc-title">Reductions</div>
+      <div class="bc-desc">VREDSUM, VREDMAX, VREDMIN, and VREDAND — tree-reduction internals, how scalar results land in engine scalar registers, and the broadcast-back pattern. Culminates in a numerically stable softmax kernel using VREDMAX for stability and VREDSUM for normalization.</div>
+      <div class="bc-tags">
+        <span class="tag">VREDSUM</span>
+        <span class="tag">VREDMAX</span>
+        <span class="tag">tree reduction</span>
+        <span class="tag">stable softmax</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch08 -->
+  <div id="book-pred" class="book-chapter">
+    <div class="bc-num">08</div>
+    <div class="bc-body">
+      <div class="bc-title">Predication &amp; Control Flow</div>
+      <div class="bc-desc">Mask operations (VMASK_SET, VMASK_AND, VMASK_OR, VMASK_NOT), the @mN predication prefix, and predicated loads/stores. Control flow: BR, BRZ, BRNZ, LOOP, KEXIT. Structured loop patterns and a LeakyReLU kernel as a worked predication example.</div>
+      <div class="bc-tags">
+        <span class="tag">VCMP / VSEL</span>
+        <span class="tag">BRZ / BRNZ</span>
+        <span class="tag">LOOP</span>
+        <span class="tag">KEXIT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch09 -->
+  <div id="book-exec" class="book-chapter">
+    <div class="bc-num">09</div>
+    <div class="bc-body">
+      <div class="bc-title">Execution Model</div>
+      <div class="bc-desc">Grid model, KLAUNCH/KWAIT semantics, multi-core execution (cycle model: max-over-cores). Appendix 9A: a complete single-head attention kernel spanning all three NPU layers — DMA in, Tensor Engine Q×Kᵀ, Vector Core softmax (64 instances), Tensor Engine attn×V, DMA out.</div>
+      <div class="bc-tags">
+        <span class="tag">KLAUNCH / KWAIT</span>
+        <span class="tag">grid model</span>
+        <span class="tag">multi-core</span>
+        <span class="tag">attention head</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch10 -->
+  <div id="book-examples" class="book-chapter">
+    <div class="bc-num">10</div>
+    <div class="bc-body">
+      <div class="bc-title">Worked Examples</div>
+      <div class="bc-desc">Seven complete kernels with line-by-line register traces: ReLU (predicated threshold), numerically stable softmax, LayerNorm (mean + variance + normalize), dot product, multi-iteration loop, predicated threshold filter, and a pattern catalog for composing primitives.</div>
+      <div class="bc-tags">
+        <span class="tag">ReLU</span>
+        <span class="tag">softmax</span>
+        <span class="tag">LayerNorm</span>
+        <span class="tag">dot product</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch11 -->
+  <div id="book-encode" class="book-chapter">
+    <div class="bc-num">11</div>
+    <div class="bc-body">
+      <div class="bc-title">Binary Encoding</div>
+      <div class="bc-desc">The 32-byte wire format — every field, its offset, and its bit width for both cinst and vinst. Three forms of an instruction (text ↔ struct ↔ bytes) and the encode/decode cycle. ELF output, R_NPU_BRANCH relocation formula, and the LLVM backend emission pipeline.</div>
+      <div class="bc-tags">
+        <span class="tag">32-byte word</span>
+        <span class="tag">npu_encode_cinst</span>
+        <span class="tag">R_NPU_BRANCH</span>
+        <span class="tag">ELF RELA</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch12 -->
+  <div id="book-kdrv" class="book-chapter bc-l2">
+    <div class="bc-num" style="color:var(--orange)">12</div>
+    <div class="bc-body">
+      <div class="bc-title">The Kernel Driver</div>
+      <div class="bc-desc">Driver internals from the ground up: the DRAM heap allocator (first-fit, 64-byte alignment, block splitting and coalescing with full trace), the 4096-entry command ring buffer, and the firmware loop. Every command type dissected — DMA, LAUNCH_KERN, TENSOR_GEMM micro-programs, fence management.</div>
+      <div class="bc-tags">
+        <span class="tag">heap_alloc</span>
+        <span class="tag">coalescing</span>
+        <span class="tag">cmdq[4096]</span>
+        <span class="tag">firmware_run</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ch13 -->
+  <div id="book-rt" class="book-chapter bc-l2">
+    <div class="bc-num" style="color:var(--orange)">13</div>
+    <div class="bc-body">
+      <div class="bc-title">The Runtime API</div>
+      <div class="bc-desc">The CUDA-style async stack: why npuMalloc is synchronous but npuMemcpy_h2d is not, the 1024-slot argument-copy pool (the dangling-pointer problem it solves), the ELF module loader (mmap → ELF64 parse → npu_decode_cinst), and npuSynchronize as the execution barrier. Fully annotated matmul end-to-end example tracing every layer.</div>
+      <div class="bc-tags">
+        <span class="tag">npuMalloc</span>
+        <span class="tag">npuLaunchKernel</span>
+        <span class="tag">arg-copy pool</span>
+        <span class="tag">npuSynchronize</span>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+</main>
+
+<!-- Byte diagram script -->
+<script>
+const CINST = [
+  { bytes:[0],     name:'stream', color:'#7C6FFF', desc:'Stream type: 0 = cinst (control/tensor), 1 = vinst (vector)' },
+  { bytes:[1],     name:'op',     color:'#00D4A8', desc:'cop_t opcode — e.g. 0=ADD, 17=BEQ, 21=JAL, 32=T_MMA' },
+  { bytes:[2],     name:'rd',     color:'#F5C842', desc:'Destination GPR index (0=x0, 1=x1, …, 31=x31)' },
+  { bytes:[3],     name:'rs1',    color:'#F5C842', desc:'Source GPR 1 index' },
+  { bytes:[4],     name:'rs2',    color:'#F5C842', desc:'Source GPR 2 index' },
+  { bytes:[5],     name:'dt',     color:'#FF7C3D', desc:'Destination tile register (0–7, tensor engine only)' },
+  { bytes:[6],     name:'a',      color:'#FF7C3D', desc:'Source tile register A (tensor engine)' },
+  { bytes:[7],     name:'b',      color:'#FF7C3D', desc:'Source tile register B (tensor engine)' },
+  { bytes:[8],     name:'M',      color:'#3DA8FF', desc:'Tile dimension M — rows of tile A and result' },
+  { bytes:[9],     name:'K',      color:'#3DA8FF', desc:'Tile dimension K — shared (cols of A, rows of B)' },
+  { bytes:[10],    name:'N',      color:'#3DA8FF', desc:'Tile dimension N — cols of tile B and result' },
+  { bytes:[11],    name:'ub',     color:'#8FA8C4', desc:'use_base: 1 = effective address is x[rs1] + imm' },
+  { bytes:[12,13,14,15], name:'count', color:'#4DCC6F', desc:'Element/byte count u32 LE — for LOAD, STORE, DMA_IN, DMA_OUT' },
+  { bytes:[16,17,18,19,20,21,22,23], name:'imm', color:'#FF4D8A', desc:'i64 LE branch target (divided by 32 = instruction index), or f64 IEEE 754 bits for T_SCALE' },
+  { bytes:[24,25,26,27,28,29,30,31], name:'pad', color:'#1C2340', desc:'Padding — reserved for future ISA extensions; always zero' },
+];
+
+const VINST = [
+  { bytes:[0],     name:'stream', color:'#7C6FFF', desc:'Stream type: always 1 for vinst' },
+  { bytes:[1],     name:'vop',    color:'#00D4A8', desc:'vop_t opcode — e.g. 0=VSETVL, 18=VADD, 35=VREDSUM, 45=BR' },
+  { bytes:[2],     name:'vd',     color:'#F5C842', desc:'Destination vector register (v0–v31)' },
+  { bytes:[3],     name:'vs1',    color:'#F5C842', desc:'Source vector register 1' },
+  { bytes:[4],     name:'vs2',    color:'#F5C842', desc:'Source vector register 2' },
+  { bytes:[5],     name:'vs',     color:'#F5A842', desc:'Source vector register (unary ops: VEXP, VLOG, VMOV, …)' },
+  { bytes:[6],     name:'rd',     color:'#FF7C3D', desc:'Destination engine scalar (s0–s31) — used by VREDSUM, VSETVL, SLI' },
+  { bytes:[7],     name:'rs',     color:'#FF7C3D', desc:'Source engine scalar / memory base register' },
+  { bytes:[8],     name:'rs1',    color:'#FF7C3D', desc:'Engine scalar operand 1 (SADD, SSUB, SMUL)' },
+  { bytes:[9],     name:'rs2',    color:'#FF7C3D', desc:'Engine scalar operand 2' },
+  { bytes:[10],    name:'md',     color:'#C77DFF', desc:'Destination mask register (m0–m7) — VCMP writes here' },
+  { bytes:[11],    name:'m1',     color:'#C77DFF', desc:'Source mask register 1' },
+  { bytes:[12],    name:'m2',     color:'#C77DFF', desc:'Source mask register 2' },
+  { bytes:[13],    name:'umk',    color:'#8FA8C4', desc:'use_mask: 1 = instruction is predicated' },
+  { bytes:[14],    name:'msk',    color:'#C77DFF', desc:'Predicate mask register index' },
+  { bytes:[15],    name:'ub',     color:'#8FA8C4', desc:'use_base: 1 = address is rs + imm' },
+  { bytes:[16,17,18,19,20,21,22,23], name:'imm', color:'#FF4D8A', desc:'i64 LE: branch target (BRZ/BRNZ/LOOP), load/store stride (VLOAD/VSTORE), or f64 scalar immediate (SFI)' },
+  { bytes:[24],    name:'cmp',    color:'#FFB04D', desc:'Compare kind — LT=0, LE=1, EQ=2, NE=3, GT=4, GE=5 (VCMP only)' },
+  { bytes:[25],    name:'cvt',    color:'#FFB04D', desc:'Convert mode — F32=0, I8=1, I32=2 (VCVT only)' },
+  { bytes:[26,27,28,29,30,31], name:'pad', color:'#1C2340', desc:'Padding — reserved; always zero' },
+];
+
+let currentFields = CINST;
+const tooltip = document.getElementById('byte-tooltip');
+
+function showDiagram(which) {
+  currentFields = which === 'cinst' ? CINST : VINST;
+  document.getElementById('btn-cinst').classList.toggle('active', which === 'cinst');
+  document.getElementById('btn-vinst').classList.toggle('active', which === 'vinst');
+  render();
+}
+
+function render() {
+  const grid = document.getElementById('byte-grid');
+  const legend = document.getElementById('byte-legend');
+  const map = new Array(32).fill(null);
+  currentFields.forEach(f => f.bytes.forEach(b => map[b] = f));
+
+  grid.innerHTML = '';
+  map.forEach((f, i) => {
+    const el = document.createElement('div');
+    el.className = 'byte-box';
+    const col = f ? f.color : '#1C2340';
+    el.style.background = col + '22';
+    el.style.borderColor = col + '66';
+    el.innerHTML = `<span class="bi">${i.toString(16).padStart(2,'0')}</span><span class="bl" style="color:${col}">${f ? f.name : ''}</span>`;
+    el.addEventListener('mouseenter', e => showTip(f, i, e));
+    el.addEventListener('mousemove', e => moveTip(e));
+    el.addEventListener('mouseleave', () => { tooltip.style.display='none'; });
+    grid.appendChild(el);
+  });
+
+  legend.innerHTML = '';
+  const seen = new Set();
+  currentFields.forEach(f => {
+    if (seen.has(f.name)) return;
+    seen.add(f.name);
+    const li = document.createElement('div');
+    li.className = 'legend-item';
+    li.innerHTML = `<span class="legend-dot" style="background:${f.color}"></span>${f.name}`;
+    li.addEventListener('mouseenter', e => showTip(f, f.bytes[0], e));
+    li.addEventListener('mousemove', e => moveTip(e));
+    li.addEventListener('mouseleave', () => { tooltip.style.display='none'; });
+    legend.appendChild(li);
+  });
+}
+
+function showTip(f, i, e) {
+  if (!f) return;
+  const byteRange = f.bytes.length === 1
+    ? `byte [${f.bytes[0]}]`
+    : `bytes [${f.bytes[0]}–${f.bytes[f.bytes.length-1]}]`;
+  tooltip.innerHTML = `<div class="tt-name">${f.name}</div><div class="tt-bytes">${byteRange} · ${f.bytes.length * 8} bits</div><div class="tt-desc">${f.desc}</div>`;
+  tooltip.style.display = 'block';
+  moveTip(e);
+}
+
+function moveTip(e) {
+  const pad = 14;
+  const tw = tooltip.offsetWidth;
+  let x = e.clientX + pad;
+  if (x + tw > window.innerWidth - 8) x = e.clientX - tw - pad;
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = (e.clientY - 20) + 'px';
+}
+
+// Sidebar active-link tracking
+const sections = document.querySelectorAll('section[id], .hero');
+const links = document.querySelectorAll('.nav-link');
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(en => {
+    if (en.isIntersecting) {
+      links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#'+en.target.id));
+    }
+  });
+}, { threshold: 0.25 });
+sections.forEach(s => obs.observe(s));
+
+render();
+</script>

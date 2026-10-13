@@ -1,0 +1,1020 @@
+ ▐▛███▜▌   Claude Code v2.1.186
+▝▜█████▛▘  Sonnet 4.6 · Claude Team
+  ▘▘ ▝▝    ~/Repos/iree-prog-npu/third_party/llvm-project
+
+
+● The INTRINSIC_W_CHAIN action is looked up by the first value result type, not
+  MVT::Other. Need to register Custom for each value type that intrinsics
+  return:
+
+● Update(llvm/lib/Target/NPU/NPUISelLowering.cpp)
+  ⎿  Added 14 lines, removed 4 lines
+       92    setOperationAction(ISD::STORE,  MVT::f32, Expand);
+       93  
+       94    // ── Intrinsics ───────────────────────────────────────────
+           ─────────────────
+       95 -  // Route @llvm.npu.* intrinsic calls to LowerIntrinsicCall. 
+          - Without Custom                                               
+       96 -  // here, the legalizer rejects INTRINSIC_VOID/INTRINSIC_W_CH
+          -AIN nodes.                                                    
+       97 -  setOperationAction(ISD::INTRINSIC_VOID,    MVT::Other, Custo
+          -m);                                                           
+       98 -  setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::Other, Custo
+          -m);                                                           
+       95 +  // Route @llvm.npu.* intrinsic calls to LowerIntrinsicCall. 
+       96 +  // IMPORTANT: The legalizer looks up INTRINSIC_W_CHAIN's act
+          +ion by the FIRST                                              
+       97 +  // value result type (not the chain type MVT::Other).  We mu
+          +st register                                                   
+       98 +  // Custom for every return type our intrinsics produce:     
+       99 +  //   i64     — tile tokens, vsetvl result, acc_clr/mma/matmu
+          +l/dot/load/loadw                                              
+      100 +  //   v16f32  — vload, vgather                               
+      101 +  //   f32     — vredsum/vredmax/vredmin/vredand/vredor (handl
+          +ed by TableGen Pat<>                                          
+      102 +  //             but routing through Custom won't hurt)       
+      103 +  // INTRINSIC_VOID uses MVT::Other (the chain) as its key — t
+          +hat is correct.                                               
+      104 +  setOperationAction(ISD::INTRINSIC_VOID,    MVT::Other,  Cust
+          +om);                                                          
+      105 +  setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::Other,  Cust
+          +om); // fallback                                              
+      106 +  setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::i64,    Cust
+          +om); // tile tokens, vsetvl                                   
+      107 +  setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::v16f32, Cust
+          +om); // vload, vgather                                        
+      108 +  setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::f32,    Cust
+          +om); // future use                                            
+      109  
+      110    // Booleans always contain 0 or 1.
+      111    setBooleanContents(ZeroOrOneBooleanContent);
+  ⎿  Referenced file llvm/lib/Target/NPU/NPUISelLowering.cpp
+  ⎿  Read llvm/lib/Target/NPU/NPUInstrInfo.cpp (90 lines)
+  ⎿  Read llvm/lib/Target/NPU/NPUTensorInstrInfo.td (192 lines)
+  ⎿  Referenced file llvm/lib/Target/NPU/NPUISelDAGToDAG.cpp
+  ⎿  Read llvm/lib/Target/NPU/NPUCallingConv.td (52 lines)
+
+● Now let me rebuild to test the fix:
+
+  Read 1 file, ran 2 shell commands (ctrl+o to expand)
+
+● Update(llvm/lib/Target/NPU/NPUISelLowering.cpp)
+  ⎿  Added 2 lines, removed 2 lines
+      170  
+      171    // Dump the problematic node to stderr for debugging, then a
+           bort.
+      172    V.dump();
+      173 -  report_fatal_error(("NPU tensor-engine: tile operand #" + Tw
+          -ine(Idx) +                                                    
+      173 +  report_fatal_error(Twine("NPU tensor-engine: tile operand #"
+          +) + Twine(Idx) +                                              
+      174        " is not constant — opcode=" + Twine(V.getOpcode()) +
+      175 -      " resno=" + Twine(V.getResNo())).str());                
+      175 +      " resno=" + Twine(V.getResNo()));                       
+      176  }
+      177  
+      178  SDValue NPUTargetLowering::LowerIntrinsicCall(SDValue Op,
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Build succeeded. Now test the MMA chain:
+
+  Searched for 1 pattern, ran 1 shell command (ctrl+o to expand)
+
+● My test had the wrong arg count. More importantly, the summary identified that
+  tile-mutating ops still have [IntrNoMem] which produces INTRINSIC_WO_CHAIN —
+  a completely different opcode from INTRINSIC_W_CHAIN. Let me fix the intrinsic
+  declarations first:
+
+  Read 1 file (ctrl+o to expand)
+
+● The tile-mutating ops (acc_clr, mma, matmul, dot, relu, scale, bcast) still
+  have [IntrNoMem] → INTRINSIC_WO_CHAIN. Changing them to [IntrHasSideEffects]
+  forces INTRINSIC_W_CHAIN:
+
+● Update(llvm/include/llvm/IR/IntrinsicsNPU.td)
+  ⎿  Added 5 lines, removed 1 line
+      75  // Maps to T_ACC_CLR (cinst.dt = destination tile register).
+      76  // Changed to take explicit dt so the instruction selector can 
+          emit the
+      77  // right tile register number without needing a tile register a
+          llocator.
+      78 +// IntrHasSideEffects: these ops modify hardware tile register 
+         +state so LLVM                                                  
+      79 +// must NOT DCE/CSE them and must give them a chain (INTRINSIC_
+         +W_CHAIN, not                                                   
+      80 +// INTRINSIC_WO_CHAIN).  IntrNoMem was wrong — the chain is req
+         +uired so that                                                  
+      81 +// LowerIntrinsicCall can intercept them and emit T_ACC_CLR / T
+         +_MMA / etc.                                                    
+      82  def int_npu_acc_clr : DefaultAttrsIntrinsic<
+      83      [llvm_i64_ty],  // tile SSA token (same value as dt, for da
+          ta-flow tracking)
+      84      [llvm_i64_ty],  // dt — destination tile number (0–7)
+      81 -    [IntrNoMem]                                                
+      85 +    [IntrHasSideEffects]                                       
+      86  >;
+      87  
+      88  // Multiply-accumulate: accumulator_tile += A * B.
+
+● Update(llvm/include/llvm/IR/IntrinsicsNPU.td)
+  ⎿  Added 1 line, removed 1 line
+       94      [llvm_i64_ty,   // acc  (accumulator tile; also the destin
+           ation)
+       95       llvm_i64_ty,   // A    (input tile)
+       96       llvm_i64_ty],  // B    (input tile)
+       97 -    [IntrNoMem]                                               
+       97 +    [IntrHasSideEffects]                                      
+       98  >;
+       99  
+      100  // Matmul without accumulation: dt = A * B.
+
+● Update(llvm/include/llvm/IR/IntrinsicsNPU.td)
+  ⎿  Added 1 line, removed 1 line
+      106      [llvm_i64_ty,   // dt — destination tile (0–7)
+      107       llvm_i64_ty,   // A
+      108       llvm_i64_ty],  // B
+      109 -    [IntrNoMem]                                               
+      109 +    [IntrHasSideEffects]                                      
+      110  >;
+      111  
+      112  // Dot product accumulate: dt = acc + dot(A, B).
+
+● Update(llvm/include/llvm/IR/IntrinsicsNPU.td)
+  ⎿  Added 1 line, removed 1 line
+      118       llvm_i64_ty,   // acc
+      119       llvm_i64_ty,   // A
+      120       llvm_i64_ty],  // B
+      121 -    [IntrNoMem]                                               
+      121 +    [IntrHasSideEffects]                                      
+      122  >;
+      123  
+      124  // ─── Layer 2 : Tensor engine – data movement (Section 6) ───
+           ──────────────────
+
+● Update(llvm/include/llvm/IR/IntrinsicsNPU.td)
+  ⎿  Added 1 line, removed 1 line
+      183      [llvm_i64_ty],  // tile token (same value as dt)
+      184      [llvm_i64_ty,   // dt — destination tile (0–7)
+      185       llvm_float_ty],// scalar value to broadcast
+      186 -    [IntrNoMem]                                               
+      186 +    [IntrHasSideEffects]                                      
+      187  >;
+      188  
+      189  // ─── Layer 2 : Tensor engine – activation (Section 7) ──────
+           ──────────────────
+
+● Update(llvm/include/llvm/IR/IntrinsicsNPU.td)
+  ⎿  Added 2 lines, removed 2 lines
+      192  def int_npu_relu : DefaultAttrsIntrinsic<
+      193      [llvm_i64_ty],
+      194      [llvm_i64_ty],  // input tile
+      195 -    [IntrNoMem]                                               
+      195 +    [IntrHasSideEffects]                                      
+      196  >;
+      197  
+      198  // Scale all elements of a tile by a scalar. Maps to T_SCALE.
+     ...
+      200      [llvm_i64_ty],
+      201      [llvm_i64_ty,      // input tile
+      202       llvm_float_ty],   // scale factor
+      203 -    [IntrNoMem]                                               
+      203 +    [IntrHasSideEffects]                                      
+      204  >;
+      205  
+      206  // ─── Layer 2 : Tensor engine – synchronization (Section 8) ─
+           ──────────────────
+
+● Now rebuild (TableGen re-runs to pick up the intrinsic attribute changes):
+  Ran 6 shell commands (ctrl+o to expand)
+
+● Progress! Now LowerIntrinsicCall IS being called (the fix for MVT::i64
+  worked), but getTileConst is seeing the raw acc_clr INTRINSIC_W_CHAIN
+  (opcode=49) for mma's acc operand. This happens because the acc_clr node
+  hasn't been fully replaced in the DAG yet. Let me read the current
+  getTileConst code:
+
+  Read 1 file (ctrl+o to expand)
+
+● The root cause: acc_clr's INTRINSIC_W_CHAIN operand is being visited by the
+  DFS but the DAG replacement hasn't propagated to mma's operand array at the
+  time LowerOperation is called. The fix is to make getTileConst recursively
+  follow INTRINSIC_W_CHAIN nodes — all tile-returning intrinsics return the same
+  tile number as their destination/acc argument (operand 2):
+
+● Update(llvm/lib/Target/NPU/NPUISelLowering.cpp)
+  ⎿  Added 20 lines, removed 1 line
+      156    SDValue V = Op.getOperand(Idx);
+      157  
+      158    // Peel through MERGE_VALUES — tile tokens returned by prior
+            tile intrinsics
+      159 -  // are wrapped in a MergeValues(tile_token, chain) node.    
+      159 +  // are wrapped in a MergeValues(tile_token, chain) node afte
+          +r legalization.                                               
+      160    while (V.getOpcode() == ISD::MERGE_VALUES)
+      161      V = V.getOperand(V.getResNo());
+      162  
+      163 +  // Handle un-legalized INTRINSIC_W_CHAIN tile ops.          
+      164 +  //                                                          
+      165 +  // All tile-returning intrinsics are defined so that their r
+          +eturn value IS the                                            
+      166 +  // same tile register number as their destination/accumulato
+          +r argument:                                                   
+      167 +  //   acc_clr(dt)      → dt      (operand 2 = dt)            
+      168 +  //   mma(acc, A, B)   → acc     (operand 2 = acc)           
+      169 +  //   matmul(dt, A, B) → dt      (operand 2 = dt)            
+      170 +  //   dot(dt, acc, A, B) → dt    (operand 2 = dt)            
+      171 +  //   relu(tile)       → tile    (operand 2 = tile)          
+      172 +  //   scale(tile, s)   → tile    (operand 2 = tile)          
+      173 +  //   bcast(dt, s)     → dt      (operand 2 = dt)            
+      174 +  //   load/loadw(dt,…) → dt      (operand 2 = dt)            
+      175 +  //                                                          
+      176 +  // When the legalizer visits the INTRINSIC_W_CHAIN for mma b
+          +efore its acc                                                 
+      177 +  // operand (acc_clr) has been replaced in the DAG, we recurs
+          +e into the                                                    
+      178 +  // producing intrinsic's own destination argument to find th
+          +e constant.                                                   
+      179 +  if (V.getOpcode() == ISD::INTRINSIC_W_CHAIN)                
+      180 +    return getTileConst(V, 2, DL, DAG);                       
+      181 +                                                              
+      182    // Regular IR constant literal.
+      183    if (const ConstantSDNode *CN = dyn_cast<ConstantSDNode>(V))
+      184      return DAG.getTargetConstant(CN->getZExtValue(), DL, MVT::
+           i64);
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Good progress! getTileConst now extracts the tile numbers correctly. The new
+  error is the NPUISD::MMA SDNode is defined with 1 value result
+  (SDT_NPUTileRet) + chain = 2 total, but we're creating it with only the chain.
+  The fix: change tile op SDNodes to return only the chain, and wrap with
+  getMergeValues({Acc, chain}) in LowerIntrinsicCall:
+
+  Let me first check the current NPUInstrInfo.td SDNode definitions:
+
+  Read 1 file (ctrl+o to expand)
+
+● The SDT_NPUTileRet definition says 1 value result (i64) + chain = 2 outputs,
+  but the NPUISD nodes are created with only MVT::Other. The cleanest fix for a
+  teaching backend: change tile-op SDNodes to return only the chain (0 value
+  results), and use getMergeValues({Acc, NewChain}) in LowerIntrinsicCall to
+  provide the tile token SSA value from the original accumulator constant:
+
+● Update(llvm/lib/Target/NPU/NPUInstrInfo.td)
+  ⎿  Added 21 lines, removed 12 lines
+       90  def npucfgshape : SDNode<"NPUISD::CFG_SHAPE", SDT_NPUCfgShape,
+       91                           [SDNPHasChain, SDNPSideEffect]>;
+       92  
+       93 -// Tile-returning ops: each returns an i64 SSA token (= tile r
+          -egister number).                                              
+       94 -// Operand list is variadic; NPUISelDAGToDAG validates counts 
+          -per intrinsic.                                                
+       95 -def SDT_NPUTileRet : SDTypeProfile<1, -1, [SDTCisVT<0, i64>]>;
+       96 -def npuacclr   : SDNode<"NPUISD::ACC_CLR", SDT_NPUTileRet,    
+       93 +// Tile-side-effect ops: emit a tensor-engine instruction and 
+          +return only the                                               
+       94 +// chain.  The tile register number (i64 SSA token) is threade
+          +d back by                                                     
+       95 +// LowerIntrinsicCall via getMergeValues({Acc_TargetConst, new
+          +Chain}), so the                                               
+       96 +// NPUISD node itself only needs to carry the chain.          
+       97 +//                                                            
+       98 +// Rationale: the hardware tile number never changes — the des
+          +tination tile is                                              
+       99 +// always the same register after ACC_CLR/MMA/etc. as it was b
+          +efore.  Keeping                                               
+      100 +// the SSA flow as a TargetConstant (instead of an actual outp
+          +ut register)                                                  
+      101 +// avoids the need for a tile register class and allocator in 
+          +this teaching                                                 
+      102 +// backend.  The variadic operand list allows the number of ti
+          +le/address args                                               
+      103 +// to vary per op; NPUISelDAGToDAG validates counts per intrin
+          +sic opcode.                                                   
+      104 +def SDT_NPUTileOp : SDTypeProfile<0, -1, []>;                 
+      105 +def npuacclr   : SDNode<"NPUISD::ACC_CLR", SDT_NPUTileOp,     
+      106                          [SDNPHasChain, SDNPSideEffect]>;
+       98 -def npumma     : SDNode<"NPUISD::MMA",     SDT_NPUTileRet,    
+      107 +def npumma     : SDNode<"NPUISD::MMA",     SDT_NPUTileOp,     
+      108                          [SDNPHasChain, SDNPSideEffect]>;
+      100 -def npumatmul  : SDNode<"NPUISD::MATMUL",  SDT_NPUTileRet,    
+      109 +def npumatmul  : SDNode<"NPUISD::MATMUL",  SDT_NPUTileOp,     
+      110                          [SDNPHasChain, SDNPSideEffect]>;
+      102 -def npudot     : SDNode<"NPUISD::DOT",     SDT_NPUTileRet,    
+      111 +def npudot     : SDNode<"NPUISD::DOT",     SDT_NPUTileOp,     
+      112                          [SDNPHasChain, SDNPSideEffect]>;
+      104 -def nputeload  : SDNode<"NPUISD::TELOAD",  SDT_NPUTileRet,    
+      113 +def nputeload  : SDNode<"NPUISD::TELOAD",  SDT_NPUTileOp,     
+      114                          [SDNPHasChain, SDNPSideEffect, SDNPMem
+           Operand]>;
+      106 -def nputeloadw : SDNode<"NPUISD::TELOADW", SDT_NPUTileRet,    
+      115 +def nputeloadw : SDNode<"NPUISD::TELOADW", SDT_NPUTileOp,     
+      116                          [SDNPHasChain, SDNPSideEffect, SDNPMem
+           Operand]>;
+      108 -def npurelu    : SDNode<"NPUISD::RELU",    SDT_NPUTileRet,    
+      117 +def npurelu    : SDNode<"NPUISD::RELU",    SDT_NPUTileOp,     
+      118                          [SDNPHasChain, SDNPSideEffect]>;
+      110 -def npuscale   : SDNode<"NPUISD::SCALE",   SDT_NPUTileRet,    
+      119 +def npuscale   : SDNode<"NPUISD::SCALE",   SDT_NPUTileOp,     
+      120                          [SDNPHasChain, SDNPSideEffect]>;
+      112 -def npubcast   : SDNode<"NPUISD::BCAST",   SDT_NPUTileRet,    
+      121 +def npubcast   : SDNode<"NPUISD::BCAST",   SDT_NPUTileOp,     
+      122                          [SDNPHasChain, SDNPSideEffect]>;
+      123  
+      124  // Void tile ops (store, DMA).
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Now the issue is that TargetConstant nodes can't be placed into virtual
+  registers (they're immediate-only), but the tile token SSA value (%t0) ends up
+  as a TargetConstant in getMergeValues and then the scheduler tries to
+  materialize it. Let me see the current LowerIntrinsicCall code:
+
+  Read 1 file (ctrl+o to expand)
+
+● The issue is that TargetConstant values can't be placed into virtual
+  registers, but tile tokens (returned from acc_clr, mma) end up in
+  getMergeValues and then need to be materialized for the return register. Fix:
+  use regular DAG.getConstant() in the tile token SSA position, and convert to
+  TargetConstant only in NPUISelDAGToDAG when creating the actual machine
+  instruction:
+
+● Update(llvm/lib/Target/NPU/NPUISelLowering.cpp)
+  ⎿  Added 10 lines, removed 4 lines
+      179    if (V.getOpcode() == ISD::INTRINSIC_W_CHAIN)
+      180      return getTileConst(V, 2, DL, DAG);
+      181  
+      182 -  // Regular IR constant literal.                             
+      182 +  // Regular IR constant literal — return as ISD::Constant (no
+          +t TargetConstant).                                            
+      183 +  // ISD::Constant can be materialized into a GPR when the til
+          +e token is used                                               
+      184 +  // as an SSA value (e.g., as a function return value or argu
+          +ment to the next                                              
+      185 +  // intrinsic).  TargetConstant is immediate-only and cannot 
+          +be placed in a                                                
+      186 +  // virtual register.  The conversion to TargetConstant happe
+          +ns later in                                                   
+      187 +  // NPUISelDAGToDAG when the NPUISD machine node is being emi
+          +tted.                                                         
+      188    if (const ConstantSDNode *CN = dyn_cast<ConstantSDNode>(V))
+      184 -    return DAG.getTargetConstant(CN->getZExtValue(), DL, MVT::
+          -i64);                                                         
+      189 +    return DAG.getConstant(CN->getZExtValue(), DL, MVT::i64); 
+      190  
+      186 -  // Already a TargetConstant (from a prior getTileConst call)
+          -.                                                             
+      191 +  // Already converted from TargetConstant — normalise back to
+          + regular Constant.                                            
+      192    if (V.getOpcode() == ISD::TargetConstant)
+      188 -    return V;                                                 
+      193 +    return DAG.getConstant(                                   
+      194 +        cast<ConstantSDNode>(V)->getZExtValue(), DL, MVT::i64)
+          +;                                                             
+      195  
+      196    // Dump the problematic node to stderr for debugging, then a
+           bort.
+      197    V.dump();
+
+● Now update NPUISelDAGToDAG::Select() to convert the ISD::Constant operands to
+  TargetConstant when emitting tile machine instructions:
+
+  Read 1 file (ctrl+o to expand)
+
+● The NPUISD tile nodes now receive ISD::Constant operands (not TargetConstant),
+  but the machine instructions need TargetConstant for TileImm operands. Need
+  to add conversion in each tile case in NPUISelDAGToDAG::Select():
+
+● Update(llvm/lib/Target/NPU/NPUISelDAGToDAG.cpp)
+  ⎿  Added 53 lines, removed 31 lines
+      234    }
+      235  
+      236    // ── Tensor Engine ────────────────────────────────────────
+           ─────────────────
+      237 +  //                                                          
+      238 +  // Helper: convert an ISD::Constant (i64) to a TargetConstan
+          +t suitable for                                                
+      239 +  // use as a TileImm or i64imm machine instruction operand.  
+          +LowerIntrinsicCall                                            
+      240 +  // produces ISD::Constant so the tile SSA value can be mater
+          +ialized in a GPR                                              
+      241 +  // when needed (e.g., returned from a function); here we re-
+          +canonicalize to                                               
+      242 +  // TargetConstant for emission as an inline immediate.      
+      243 +  // NOTE: this lambda is defined locally so it captures DL/Cu
+          +rDAG.                                                         
+      244  
+      245    // NPUISD::CFG_SHAPE(chain, M:i64, K:i64, N:i64) → T_CFG_SHA
+           PE M, K, N
+      246    // All three dimensions must be compile-time constants.
+     ...
+      252  
+      253      auto toImm = [&](SDValue V, const char *which) -> SDValue 
+           {
+      254        if (!isa<ConstantSDNode>(V))
+      248 -        report_fatal_error(                                   
+      249 -            Twine("NPU CFG_SHAPE: ") + which +                
+      250 -            " must be a compile-time constant");              
+      255 +        report_fatal_error(Twine("NPU CFG_SHAPE: ") + which + 
+      256 +                           " must be a compile-time constant")
+          +;                                                             
+      257        return CurDAG->getTargetConstant(
+      258            cast<ConstantSDNode>(V)->getZExtValue(), DL, MVT::i6
+           4);
+      259      };
+     ...
+      264    }
+      265  
+      266    // NPUISD::ACC_CLR(chain, dt:i64) — emits T_ACC_CLR dt
+      261 -  // The NPUISD node has no SSA output (chain only); the tile 
+          -token is                                                      
+      262 -  // produced directly in LowerIntrinsicCall by returning dt a
+          -s a constant.                                                 
+      267 +  // The NPUISD node has chain-only output; the tile token SSA
+          + value is                                                     
+      268 +  // threaded back by LowerIntrinsicCall via getMergeValues({d
+          +t_const, chain}).                                             
+      269    case NPUISD::ACC_CLR: {
+      270      SDValue Chain = Node->getOperand(0);
+      265 -    SDValue DT    = Node->getOperand(1); // already a TargetCo
+          -nstant                                                        
+      271 +    SDValue DT    = CurDAG->getTargetConstant(                
+      272 +        cast<ConstantSDNode>(Node->getOperand(1))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      273      SDValue Ops[] = {DT, Chain};
+      274      CurDAG->SelectNodeTo(Node, NPU::T_ACC_CLR, MVT::Other, Ops
+           );
+      275      return;
+     ...
+      278    // NPUISD::MMA(chain, acc:i64, A:i64, B:i64) — emits T_MMA a
+           cc, A, B
+      279    case NPUISD::MMA: {
+      280      SDValue Chain = Node->getOperand(0);
+      274 -    SDValue Acc   = Node->getOperand(1);                      
+      275 -    SDValue A     = Node->getOperand(2);                      
+      276 -    SDValue B     = Node->getOperand(3);                      
+      277 -    SDValue Ops[] = {Acc, A, B, Chain};                       
+      281 +    auto TC = [&](unsigned idx) {                             
+      282 +      return CurDAG->getTargetConstant(                       
+      283 +          cast<ConstantSDNode>(Node->getOperand(idx))->getZExt
+          +Value(),                                                      
+      284 +          DL, MVT::i64);                                      
+      285 +    };                                                        
+      286 +    SDValue Ops[] = {TC(1), TC(2), TC(3), Chain};             
+      287      CurDAG->SelectNodeTo(Node, NPU::T_MMA, MVT::Other, Ops);
+      288      return;
+      289    }
+     ...
+      291    // NPUISD::MATMUL(chain, dt:i64, A:i64, B:i64) — emits T_MAT
+           MUL dt, A, B
+      292    case NPUISD::MATMUL: {
+      293      SDValue Chain = Node->getOperand(0);
+      285 -    SDValue DT    = Node->getOperand(1);                      
+      286 -    SDValue A     = Node->getOperand(2);                      
+      287 -    SDValue B     = Node->getOperand(3);                      
+      288 -    SDValue Ops[] = {DT, A, B, Chain};                        
+      294 +    auto TC = [&](unsigned idx) {                             
+      295 +      return CurDAG->getTargetConstant(                       
+      296 +          cast<ConstantSDNode>(Node->getOperand(idx))->getZExt
+          +Value(),                                                      
+      297 +          DL, MVT::i64);                                      
+      298 +    };                                                        
+      299 +    SDValue Ops[] = {TC(1), TC(2), TC(3), Chain};             
+      300      CurDAG->SelectNodeTo(Node, NPU::T_MATMUL, MVT::Other, Ops)
+           ;
+      301      return;
+      302    }
+     ...
+      304    // NPUISD::DOT(chain, dt:i64, acc:i64, A:i64, B:i64) — emits
+            T_DOT
+      305    case NPUISD::DOT: {
+      306      SDValue Chain = Node->getOperand(0);
+      296 -    SDValue DT    = Node->getOperand(1);                      
+      297 -    SDValue Acc   = Node->getOperand(2);                      
+      298 -    SDValue A     = Node->getOperand(3);                      
+      299 -    SDValue B     = Node->getOperand(4);                      
+      300 -    SDValue Ops[] = {DT, Acc, A, B, Chain};                   
+      307 +    auto TC = [&](unsigned idx) {                             
+      308 +      return CurDAG->getTargetConstant(                       
+      309 +          cast<ConstantSDNode>(Node->getOperand(idx))->getZExt
+          +Value(),                                                      
+      310 +          DL, MVT::i64);                                      
+      311 +    };                                                        
+      312 +    SDValue Ops[] = {TC(1), TC(2), TC(3), TC(4), Chain};      
+      313      CurDAG->SelectNodeTo(Node, NPU::T_DOT, MVT::Other, Ops);
+      314      return;
+      315    }
+     ...
+      317    // NPUISD::TELOAD(chain, dt:i64, ptr:i64, count:i64) — emits
+            T_LOAD
+      318    case NPUISD::TELOAD: {
+      319      SDValue Chain = Node->getOperand(0);
+      308 -    SDValue DT    = Node->getOperand(1);                      
+      320 +    SDValue DT    = CurDAG->getTargetConstant(                
+      321 +        cast<ConstantSDNode>(Node->getOperand(1))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      322      SDValue Ptr   = Node->getOperand(2);
+      310 -    SDValue Count = Node->getOperand(3);                      
+      323 +    SDValue Count = CurDAG->getTargetConstant(                
+      324 +        cast<ConstantSDNode>(Node->getOperand(3))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      325      SDValue Ops[] = {DT, Ptr, Count, Chain};
+      326      CurDAG->SelectNodeTo(Node, NPU::T_LOAD, MVT::Other, Ops);
+      327      return;
+     ...
+      330    // NPUISD::TELOADW(chain, dt:i64, ptr:i64, count:i64) — emit
+           s T_LOADW
+      331    case NPUISD::TELOADW: {
+      332      SDValue Chain = Node->getOperand(0);
+      319 -    SDValue DT    = Node->getOperand(1);                      
+      333 +    SDValue DT    = CurDAG->getTargetConstant(                
+      334 +        cast<ConstantSDNode>(Node->getOperand(1))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      335      SDValue Ptr   = Node->getOperand(2);
+      321 -    SDValue Count = Node->getOperand(3);                      
+      336 +    SDValue Count = CurDAG->getTargetConstant(                
+      337 +        cast<ConstantSDNode>(Node->getOperand(3))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      338      SDValue Ops[] = {DT, Ptr, Count, Chain};
+      339      CurDAG->SelectNodeTo(Node, NPU::T_LOADW, MVT::Other, Ops);
+      340      return;
+     ...
+      344    case NPUISD::TESTORE: {
+      345      SDValue Chain = Node->getOperand(0);
+      346      SDValue Ptr   = Node->getOperand(1);
+      331 -    SDValue Tile  = Node->getOperand(2);                      
+      332 -    SDValue Count = Node->getOperand(3);                      
+      347 +    SDValue Tile  = CurDAG->getTargetConstant(                
+      348 +        cast<ConstantSDNode>(Node->getOperand(2))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      349 +    SDValue Count = CurDAG->getTargetConstant(                
+      350 +        cast<ConstantSDNode>(Node->getOperand(3))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      351      SDValue Ops[] = {Ptr, Tile, Count, Chain};
+      352      CurDAG->SelectNodeTo(Node, NPU::T_STORE, MVT::Other, Ops);
+      353      return;
+     ...
+      358      SDValue Chain = Node->getOperand(0);
+      359      SDValue Dst   = Node->getOperand(1);
+      360      SDValue Src   = Node->getOperand(2);
+      343 -    SDValue Bytes = Node->getOperand(3);                      
+      361 +    SDValue Bytes = CurDAG->getTargetConstant(                
+      362 +        cast<ConstantSDNode>(Node->getOperand(3))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      363      SDValue Ops[] = {Dst, Src, Bytes, Chain};
+      364      CurDAG->SelectNodeTo(Node, NPU::T_DMA_IN, MVT::Other, Ops)
+           ;
+      365      return;
+     ...
+      370      SDValue Chain = Node->getOperand(0);
+      371      SDValue Dst   = Node->getOperand(1);
+      372      SDValue Src   = Node->getOperand(2);
+      354 -    SDValue Bytes = Node->getOperand(3);                      
+      373 +    SDValue Bytes = CurDAG->getTargetConstant(                
+      374 +        cast<ConstantSDNode>(Node->getOperand(3))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      375      SDValue Ops[] = {Dst, Src, Bytes, Chain};
+      376      CurDAG->SelectNodeTo(Node, NPU::T_DMA_OUT, MVT::Other, Ops
+           );
+      377      return;
+     ...
+      380    // NPUISD::RELU(chain, tile:i64) — emits T_RELU dt=tile, a=t
+           ile
+      381    case NPUISD::RELU: {
+      382      SDValue Chain = Node->getOperand(0);
+      363 -    SDValue Tile  = Node->getOperand(1);                      
+      364 -    // T_RELU format: TensorTile2 (dt, a)                     
+      383 +    SDValue Tile  = CurDAG->getTargetConstant(                
+      384 +        cast<ConstantSDNode>(Node->getOperand(1))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      385 +    // T_RELU format: TensorTile2 (dt, a) — in-place, so dt=a=
+          +tile                                                          
+      386      SDValue Ops[] = {Tile, Tile, Chain};
+      387      CurDAG->SelectNodeTo(Node, NPU::T_RELU, MVT::Other, Ops);
+      388      return;
+     ...
+      391    // NPUISD::SCALE(chain, tile:i64, factor:f64) — emits T_SCAL
+           E dt=tile, a=tile, factor
+      392    case NPUISD::SCALE: {
+      393      SDValue Chain  = Node->getOperand(0);
+      373 -    SDValue Tile   = Node->getOperand(1);                     
+      394 +    SDValue Tile   = CurDAG->getTargetConstant(               
+      395 +        cast<ConstantSDNode>(Node->getOperand(1))->getZExtValu
+          +e(), DL, MVT::i64);                                           
+      396      SDValue Factor = Node->getOperand(2);
+      375 -    // T_SCALE format: (dt, a, factor) where dt=a=tile        
+      397 +    // T_SCALE format: (dt, a, factor) where dt=a=tile (in-pla
+          +ce scaling)                                                   
+      398      SDValue Ops[] = {Tile, Tile, Factor, Chain};
+      399      CurDAG->SelectNodeTo(Node, NPU::T_SCALE, MVT::Other, Ops);
+      400      return;
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The tensor engine chain works. ACC.CLR t0 → MMA t0, t1, t2 → return 0 (tile
+  register number). Now let's run the full test suite to make sure all three
+  layers still work:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 5 existing tests still pass. Now let's write proper lit tests for the
+  tensor engine and vector core, and test the full end-to-end pipeline:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The test_act function passes a runtime %tile argument which can't be
+  statically resolved to a constant tile number. Tile register numbers are
+  ISA-level immediates — this is a design constraint. Fix the test to use
+  constant tile numbers:
+
+  Ran 1 shell command (ctrl+o to expand)
+● Let me check what's actually in the current LowerIntrinsicCall for scale and
+  bcast, and understand what f32 type issue we're hitting:
+
+  Read 1 file (ctrl+o to expand)
+
+● The f32 constant 2.0 for npu_scale is being legalized as a float value that
+  needs to go into the SReg file — but SRegs hold reduction results, not
+  arbitrary f32 constants. Fix: convert the scale/bcast factor to a
+  TargetConstantFP immediately in LowerIntrinsicCall, bypassing f32 register
+  materialization:
+
+● Update(llvm/lib/Target/NPU/NPUISelLowering.cpp)
+  ⎿  Added 31 lines, removed 7 lines
+      343  
+      344    // @llvm.npu.scale(tile:i64, factor:float) → i64
+      345    // Emits: T_SCALE dt=tile, a=tile, factor.  Returns tile (in
+           -place).
+      346 +  //                                                          
+      347 +  // The scale factor is encoded in the instruction binary (by
+          +tes 16–23 of the                                              
+      348 +  // 32-byte cinst word, same as the imm/fimm field).  We must
+          + convert the f32                                              
+      349 +  // operand to a TargetConstantFP(f64) immediately here, bypa
+          +ssing the f32                                                 
+      350 +  // type legalizer.  If we let the ConstantFP:f32 node live a
+          +s a regular                                                   
+      351 +  // operand, the legalizer tries to materialize it into an SR
+          +eg and then load                                              
+      352 +  // it, which fails because SRegs hold reduction results, not
+          + general FP values.                                           
+      353    case Intrinsic::npu_scale: {
+      347 -    SDValue Tile   = getTileConst(Op, 2, DL, DAG);            
+      348 -    SDValue Factor = Op.getOperand(3); // f32 or f64 float imm
+          -ediate                                                        
+      354 +    SDValue Tile = getTileConst(Op, 2, DL, DAG);              
+      355 +    SDValue Factor = Op.getOperand(3); // ConstantFP:f32      
+      356 +    const ConstantFPSDNode *FP = dyn_cast<ConstantFPSDNode>(Fa
+          +ctor);                                                        
+      357 +    if (!FP)                                                  
+      358 +      report_fatal_error("NPU scale: factor must be a compile-
+          +time constant float");                                        
+      359 +    // Widen f32 → f64 for the instruction's f64imm operand, t
+          +hen wrap as                                                   
+      360 +    // TargetConstantFP so the emitter treats it as an inline 
+          +immediate.                                                    
+      361 +    APFloat fval = FP->getValueAPF();                         
+      362 +    bool lossy;                                               
+      363 +    fval.convert(APFloat::IEEEdouble(), APFloat::rmNearestTies
+          +ToEven, &lossy);                                              
+      364 +    SDValue FactorTC = DAG.getTargetConstantFP(fval, DL, MVT::
+          +f64);                                                         
+      365      SDValue NewChain = DAG.getNode(NPUISD::SCALE, DL, MVT::Oth
+           er,
+      350 -                                   Chain, Tile, Factor);      
+      366 +                                   Chain, Tile, FactorTC);    
+      367      return DAG.getMergeValues({Tile, NewChain}, DL);
+      368    }
+      369  
+      370    // @llvm.npu.bcast(dt:i64, val:float) → i64
+      355 -  // Emits: T_BCAST dt, factor.  Returns dt.                  
+      371 +  // Emits: T_BCAST dt, val.  Returns dt.                     
+      372 +  // Same TargetConstantFP strategy as npu_scale above.       
+      373    case Intrinsic::npu_bcast: {
+      357 -    SDValue DT  = getTileConst(Op, 2, DL, DAG);               
+      358 -    SDValue Val = Op.getOperand(3);                           
+      374 +    SDValue DT = getTileConst(Op, 2, DL, DAG);                
+      375 +    SDValue Val = Op.getOperand(3); // ConstantFP:f32         
+      376 +    const ConstantFPSDNode *FP = dyn_cast<ConstantFPSDNode>(Va
+          +l);                                                           
+      377 +    if (!FP)                                                  
+      378 +      report_fatal_error("NPU bcast: broadcast value must be a
+          + compile-time constant float");                               
+      379 +    APFloat fval = FP->getValueAPF();                         
+      380 +    bool lossy;                                               
+      381 +    fval.convert(APFloat::IEEEdouble(), APFloat::rmNearestTies
+          +ToEven, &lossy);                                              
+      382 +    SDValue ValTC = DAG.getTargetConstantFP(fval, DL, MVT::f64
+          +);                                                            
+      383      SDValue NewChain = DAG.getNode(NPUISD::BCAST, DL, MVT::Oth
+           er,
+      360 -                                   Chain, DT, Val);           
+      384 +                                   Chain, DT, ValTC);         
+      385      return DAG.getMergeValues({DT, NewChain}, DL);
+      386    }
+      387  
+
+● Need to add the APFloat include:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(llvm/lib/Target/NPU/NPUISelLowering.cpp)
+  ⎿  Added 1 line
+      15  #include "llvm/CodeGen/MachineRegisterInfo.h"
+      16  #include "llvm/CodeGen/SelectionDAG.h"
+      17  #include "llvm/IR/IntrinsicsNPU.h"
+      18 +#include "llvm/ADT/APFloat.h"                                  
+      19  #include "llvm/Support/ErrorHandling.h"
+      20  
+      21  using namespace llvm;
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● TargetConstantFP:f64 fails because f64 is an illegal type. The fix: pass
+  scale/bcast factors as TargetConstant:i64 (raw double bits) through the NPUISD
+  node, then recreate TargetConstantFP:f64 in NPUISelDAGToDAG::Select (after
+  legalization, where machine node operand types aren't checked):
+
+● Update(llvm/lib/Target/NPU/NPUISelLowering.cpp)
+  ⎿  Added 15 lines, removed 12 lines
+      353    // it, which fails because SRegs hold reduction results, not
+            general FP values.
+      354    case Intrinsic::npu_scale: {
+      355      SDValue Tile = getTileConst(Op, 2, DL, DAG);
+      356 -    SDValue Factor = Op.getOperand(3); // ConstantFP:f32      
+      357 -    const ConstantFPSDNode *FP = dyn_cast<ConstantFPSDNode>(Fa
+          -ctor);                                                        
+      356 +    const ConstantFPSDNode *FP = dyn_cast<ConstantFPSDNode>(Op
+          +.getOperand(3));                                              
+      357      if (!FP)
+      358        report_fatal_error("NPU scale: factor must be a compile-
+           time constant float");
+      360 -    // Widen f32 → f64 for the instruction's f64imm operand, t
+          -hen wrap as                                                   
+      361 -    // TargetConstantFP so the emitter treats it as an inline 
+          -immediate.                                                    
+      359 +    // Encode the float factor as a TargetConstant:i64 contain
+          +ing the                                                       
+      360 +    // IEEE 754 double-precision bit pattern.  We use i64 (not
+          + TargetConstantFP)                                            
+      361 +    // because f64 is not a legal register type on the NPU con
+          +trol core, and                                                
+      362 +    // TargetConstantFP with an illegal type triggers the lega
+          +lizer assertion.                                              
+      363 +    // NPUISelDAGToDAG::Select converts the bits back to Targe
+          +tConstantFP:f64                                               
+      364 +    // (which is fine there — machine-node operands skip type 
+          +legalization).                                                
+      365      APFloat fval = FP->getValueAPF();
+      366      bool lossy;
+      367      fval.convert(APFloat::IEEEdouble(), APFloat::rmNearestTies
+           ToEven, &lossy);
+      365 -    SDValue FactorTC = DAG.getTargetConstantFP(fval, DL, MVT::
+          -f64);                                                         
+      368 +    SDValue FactorBits = DAG.getTargetConstant(               
+      369 +        fval.bitcastToAPInt().getZExtValue(), DL, MVT::i64);  
+      370      SDValue NewChain = DAG.getNode(NPUISD::SCALE, DL, MVT::Oth
+           er,
+      367 -                                   Chain, Tile, FactorTC);    
+      371 +                                   Chain, Tile, FactorBits);  
+      372      return DAG.getMergeValues({Tile, NewChain}, DL);
+      373    }
+      374  
+      375    // @llvm.npu.bcast(dt:i64, val:float) → i64
+      372 -  // Emits: T_BCAST dt, val.  Returns dt.                     
+      373 -  // Same TargetConstantFP strategy as npu_scale above.       
+      376 +  // Emits: T_BCAST dt, val.  Returns dt.  Same bit-pattern en
+          +coding as scale.                                              
+      377    case Intrinsic::npu_bcast: {
+      378      SDValue DT = getTileConst(Op, 2, DL, DAG);
+      376 -    SDValue Val = Op.getOperand(3); // ConstantFP:f32         
+      377 -    const ConstantFPSDNode *FP = dyn_cast<ConstantFPSDNode>(Va
+          -l);                                                           
+      379 +    const ConstantFPSDNode *FP = dyn_cast<ConstantFPSDNode>(Op
+          +.getOperand(3));                                              
+      380      if (!FP)
+      381        report_fatal_error("NPU bcast: broadcast value must be a
+            compile-time constant float");
+      382      APFloat fval = FP->getValueAPF();
+      383      bool lossy;
+      384      fval.convert(APFloat::IEEEdouble(), APFloat::rmNearestTies
+           ToEven, &lossy);
+      383 -    SDValue ValTC = DAG.getTargetConstantFP(fval, DL, MVT::f64
+          -);                                                            
+      385 +    SDValue ValBits = DAG.getTargetConstant(                  
+      386 +        fval.bitcastToAPInt().getZExtValue(), DL, MVT::i64);  
+      387      SDValue NewChain = DAG.getNode(NPUISD::BCAST, DL, MVT::Oth
+           er,
+      385 -                                   Chain, DT, ValTC);         
+      388 +                                   Chain, DT, ValBits);       
+      389      return DAG.getMergeValues({DT, NewChain}, DL);
+      390    }
+      391  
+
+● Now update NPUISelDAGToDAG::Select for SCALE (and stub BCAST) to reconstruct
+  TargetConstantFP:f64 from the i64 bits:
+
+● Update(llvm/lib/Target/NPU/NPUISelDAGToDAG.cpp)
+  ⎿  Added 9 lines, removed 4 lines
+      388      return;
+      389    }
+      390  
+      391 -  // NPUISD::SCALE(chain, tile:i64, factor:f64) — emits T_SCAL
+          -E dt=tile, a=tile, factor                                     
+      391 +  // NPUISD::SCALE(chain, tile:i64, factor_bits:i64) — emits T
+          +_SCALE dt=tile, a=tile, factor                                
+      392 +  // factor_bits is a TargetConstant:i64 holding the IEEE 754 
+          +double bit pattern                                            
+      393 +  // of the scale factor.  Convert it back to TargetConstantFP
+          +:f64 here; machine                                            
+      394 +  // node operand types are not type-legalized, so f64 is fine
+          + at this point.                                               
+      395    case NPUISD::SCALE: {
+      393 -    SDValue Chain  = Node->getOperand(0);                     
+      394 -    SDValue Tile   = CurDAG->getTargetConstant(               
+      396 +    SDValue Chain = Node->getOperand(0);                      
+      397 +    SDValue Tile  = CurDAG->getTargetConstant(                
+      398          cast<ConstantSDNode>(Node->getOperand(1))->getZExtValu
+           e(), DL, MVT::i64);
+      396 -    SDValue Factor = Node->getOperand(2);                     
+      399 +    uint64_t Bits = cast<ConstantSDNode>(Node->getOperand(2))-
+          +>getZExtValue();                                              
+      400 +    APFloat FVal(APFloat::IEEEdouble(), APInt(64, Bits));     
+      401 +    SDValue Factor = CurDAG->getTargetConstantFP(FVal, DL, MVT
+          +::f64);                                                       
+      402      // T_SCALE format: (dt, a, factor) where dt=a=tile (in-pla
+           ce scaling)
+      403      SDValue Ops[] = {Tile, Tile, Factor, Chain};
+      404      CurDAG->SelectNodeTo(Node, NPU::T_SCALE, MVT::Other, Ops);
+
+● Need to add APFloat/APInt include to NPUISelDAGToDAG.cpp:
+
+● Update(llvm/lib/Target/NPU/NPUISelDAGToDAG.cpp)
+  ⎿  Added 3 lines, removed 1 line
+      28  #include "NPUISelLowering.h"
+      29  #include "NPUTargetMachine.h"
+      30  #include "llvm/CodeGen/SelectionDAGISel.h"
+      31 +#include "llvm/ADT/APFloat.h"                                  
+      32 +#include "llvm/ADT/APInt.h"                                    
+      33 +#include "llvm/ADT/Twine.h"                                    
+      34  #include "llvm/Support/Debug.h"
+      35  #include "llvm/Support/ErrorHandling.h"
+      33 -#include "llvm/ADT/Twine.h"                                    
+      36  
+      37  using namespace llvm;
+      38  
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Instruction selection now works (T_SCALE 3, 3, double 2.000000e+00). The
+  MCInstLower doesn't handle MO_FPImmediate operands. Let me fix that:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(llvm/lib/Target/NPU/NPUMCInstLower.cpp)
+  ⎿  Added 12 lines
+      58        MCOp = LowerSymbolOperand(
+      59            MO, Printer.GetBlockAddressSymbol(MO.getBlockAddress(
+          )));
+      60        break;
+      61 +    case MachineOperand::MO_FPImmediate:                       
+      62 +      // Floating-point immediates (e.g. T_SCALE factor, T_BCAS
+         +T value).                                                      
+      63 +      // The NPU instruction binary encodes these as a double i
+         +n bytes 16–23                                                  
+      64 +      // of the 32-byte cinst word.  Pass the value as an MCOpe
+         +rand::createDFPImm                                             
+      65 +      // (direct FP immediate via its double bit pattern).     
+      66 +      MCOp = MCOperand::createDFPImm(                          
+      67 +          MO.getFPImm()->getValueAPF().bitcastToAPInt().getZExt
+         +Value());                                                      
+      68 +      break;                                                   
+      69 +    case MachineOperand::MO_FrameIndex:                        
+      70 +      // Frame indices should have been eliminated by register 
+         +allocation.                                                    
+      71 +      // If one reaches here the frame info was not fully final
+         +ized; skip it.                                                 
+      72 +      continue;                                                
+      73      default:
+      74        MI->print(errs());
+      75        llvm_unreachable("unknown operand type");
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Almost there. NPUInstPrinter::printOperand doesn't handle DFPImm type
+  operands. Let me fix it:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(llvm/lib/Target/NPU/MCTargetDesc/NPUInstPrinter.cpp)
+  ⎿  Added 2 lines
+       7  //===----------------------------------------------------------
+          ------------===//
+       8  
+       9  #include "NPUInstPrinter.h"
+      10 +#include "llvm/ADT/APFloat.h"                                  
+      11 +#include "llvm/ADT/APInt.h"                                    
+      12  #include "llvm/MC/MCAsmInfo.h"
+      13  #include "llvm/MC/MCExpr.h"
+      14  #include "llvm/MC/MCInst.h"
+
+● Update(llvm/lib/Target/NPU/MCTargetDesc/NPUInstPrinter.cpp)
+  ⎿  Added 10 lines
+      37      O << Op.getImm();
+      38      return;
+      39    }
+      40 +  if (Op.isDFPImm()) {                                         
+      41 +    // Floating-point immediate (T_SCALE / T_BCAST factor).    
+      42 +    // The value is stored as a double bit pattern; reconstruct
+         + and print it.                                                 
+      43 +    APFloat FVal(APFloat::IEEEdouble(), APInt(64, Op.getDFPImm(
+         +)));                                                           
+      44 +    SmallString<16> Str;                                       
+      45 +    FVal.toString(Str, /*FormatPrecision=*/6, /*FormatMaxPaddin
+         +g=*/0,                                                         
+      46 +                  /*TruncateZero=*/false);                     
+      47 +    O << Str;                                                  
+      48 +    return;                                                    
+      49 +  }                                                            
+      50    assert(Op.isExpr() && "unknown operand kind in printOperand")
+          ;
+      51    MAI.printExpr(O, *Op.getExpr());
+      52  }
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The test_dot fails because T_DOT uses TensorTile3 (3 operands) but the DOT
+  instruction needs 4 tile args. Let me check the simulator for the real DOT
+  encoding:
+
+  Searched for 4 patterns, listed 1 directory (ctrl+o to expand)
+● T_DOT uses CF_T3 format (same as MMA/MATMUL) — 3 operands. The acc arg in
+  int_npu_dot was wrong; dt is the accumulator. Fix the intrinsic signature and
+  lowering:
+
+● Update(llvm/include/llvm/IR/IntrinsicsNPU.td)
+  ⎿  Added 4 lines, removed 4 lines
+      109      [IntrHasSideEffects]
+      110  >;
+      111  
+      112 -// Dot product accumulate: dt = acc + dot(A, B).              
+      113 -// dt : i64 — explicit destination tile.                      
+      112 +// Dot product accumulate: dt += dot(A, B).                   
+      113 +// Uses CF_T3 format (same as MMA/MATMUL) — dt IS the accumula
+          +tor.                                                          
+      114 +// dt : i64 — destination tile (also the initial accumulator).
+      115  // Maps to T_DOT.
+      116  def int_npu_dot : DefaultAttrsIntrinsic<
+      117      [llvm_i64_ty],  // result tile token (same value as dt)
+      117 -    [llvm_i64_ty,   // dt — destination tile (0–7)            
+      118 -     llvm_i64_ty,   // acc                                    
+      118 +    [llvm_i64_ty,   // dt — destination and accumulator tile (
+          +0–7)                                                          
+      119       llvm_i64_ty,   // A
+      120       llvm_i64_ty],  // B
+      121      [IntrHasSideEffects]
+  ⎿  Read llvm/include/llvm/IR/IntrinsicsNPU.td (358 lines)
+  ⎿  Read llvm/lib/Target/NPU/MCTargetDesc/NPUInstPrinter.cpp (73 lines)
+  ⎿  Read llvm/lib/Target/NPU/NPUMCInstLower.cpp (80 lines)
+  ⎿  Referenced file llvm/lib/Target/NPU/NPUISelDAGToDAG.cpp
+  ⎿  Referenced file llvm/lib/Target/NPU/NPUISelLowering.cpp
+
+● Now let me read the current LowerIntrinsicCall and NPUISelDAGToDAG to find the
+  dot lowering:
+
+  Searched for 1 pattern, read 2 files (ctrl+o to expand)
+
+● The intrinsic now has 3 args (dt, A, B) after the .td change above. Now fix
+  the lowering in both ISel files:
+
+● Update(llvm/lib/Target/NPU/NPUISelLowering.cpp)
+  ⎿  Added 7 lines, removed 7 lines
+      271      return DAG.getMergeValues({DT, NewChain}, DL);
+      272    }
+      273  
+      274 -  // @llvm.npu.dot(dt:i64, acc:i64, A:i64, B:i64) → i64       
+      275 -  // Emits: T_DOT dt, acc, A, B.  Returns dt.                 
+      274 +  // @llvm.npu.dot(dt:i64, A:i64, B:i64) → i64                
+      275 +  // CF_T3 format (same as MMA/MATMUL): dt is the destination 
+          +AND accumulator.                                              
+      276 +  // Emits: T_DOT dt, A, B.  Returns dt.                      
+      277    case Intrinsic::npu_dot: {
+      277 -    SDValue DT  = getTileConst(Op, 2, DL, DAG);               
+      278 -    SDValue Acc = getTileConst(Op, 3, DL, DAG);               
+      279 -    SDValue A   = getTileConst(Op, 4, DL, DAG);               
+      280 -    SDValue B   = getTileConst(Op, 5, DL, DAG);               
+      278 +    SDValue DT = getTileConst(Op, 2, DL, DAG);                
+      279 +    SDValue A  = getTileConst(Op, 3, DL, DAG);                
+      280 +    SDValue B  = getTileConst(Op, 4, DL, DAG);                
+      281      SDValue NewChain = DAG.getNode(NPUISD::DOT, DL, MVT::Other
+           ,
+      282 -                                   Chain, DT, Acc, A, B);     
+      282 +                                   Chain, DT, A, B);          
+      283      return DAG.getMergeValues({DT, NewChain}, DL);
+      284    }
+      285  
+  ⎿  You've hit your session limit · resets 8:10pm (Asia/Karachi)
+     /usage-credits to request more usage from your admin.
+
+✻ Baked for 1h 6m 27s
